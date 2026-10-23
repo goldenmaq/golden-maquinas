@@ -1461,11 +1461,20 @@ async function toggleTarefaConcluida(id, concluida){
   if(db && canWrite){ try{ await db.collection('tarefas').doc(id).update({concluida, atualizadoEm:t.atualizadoEm}); }catch(e){ console.error(e); toast('Não foi possível atualizar no banco.'); } }
   paintListaTarefas(); paintCalendario();
 }
-async function excluirTarefa(id){
-  if(!confirm('Excluir este lembrete?')) return;
-  TAREFAS = TAREFAS.filter(t=>t.id!==id);
-  if(db && canWrite){ try{ await db.collection('tarefas').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
-  paintListaTarefas(); paintCalendario();
+function excluirTarefa(id){
+  const t = TAREFAS.find(x=>x.id===id); if(!t) return;
+  openModal(`<h2 style="font-size:17px;margin-bottom:10px">Excluir lembrete</h2>
+    <p>Tem certeza que deseja excluir o lembrete <b>${esc(t.titulo)}</b>? Esta ação não pode ser desfeita.</p>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="btnConfirmaExcluirTarefa">Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnConfirmaExcluirTarefa').onclick = async ()=>{
+    TAREFAS = TAREFAS.filter(x=>x.id!==id);
+    if(db && canWrite){ try{ await db.collection('tarefas').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+    closeModal(); toast('Lembrete excluído.');
+    paintListaTarefas(); paintCalendario();
+  };
 }
 function abrirNovoLembreteModal(dataInicial){
   openModal(`
