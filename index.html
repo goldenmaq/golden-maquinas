@@ -215,6 +215,7 @@
     <a class="navlink" data-view="nova" href="#nova"><span class="dot"></span>Nova Proposta</a>
     <a class="navlink" data-view="propostas" href="#propostas"><span class="dot"></span>Propostas</a>
     <a class="navlink" data-view="catalogo" href="#catalogo"><span class="dot"></span>Catálogo de Máquinas</a>
+    <a class="navlink" data-view="precos" href="#precos"><span class="dot"></span>Tabela de Preços</a>
     <a class="navlink" data-view="clientes" href="#clientes"><span class="dot"></span>Clientes</a>
     <a class="navlink" data-view="contratos" href="#contratos"><span class="dot"></span>Contratos</a>
     <a class="navlink" data-view="atas" href="#atas"><span class="dot"></span>Ata de Visita</a>
@@ -239,6 +240,7 @@ const NAV = [
   {id:'nova', label:'Nova Proposta'},
   {id:'propostas', label:'Propostas'},
   {id:'catalogo', label:'Catálogo'},
+  {id:'precos', label:'Tabela de Preços'},
   {id:'clientes', label:'Clientes'},
   {id:'contratos', label:'Contratos'},
   {id:'atas', label:'Ata de Visita'},
@@ -587,6 +589,7 @@ function renderShellForRoute(){
   if(view==='nova') return renderNovaProposta(app);
   if(view==='propostas') return renderPropostas(app);
   if(view==='catalogo') return renderCatalogo(app);
+  if(view==='precos') return renderPrecos(app);
   if(view==='clientes') return renderClientes(app);
   if(view==='contratos') return renderContratos(app);
   if(view==='atas') return renderAtas(app);
@@ -785,6 +788,7 @@ function statusClass(s){
 
 /* ================= CATÁLOGO ================= */
 let catFiltro = { termo:'', linha:'todas', tipo:'todas' };
+let precosFiltro = { termo:'' };
 function renderCatalogo(app){
   const linhas = ['todas', ...new Set(CATALOGO.map(c=>c.categoria||c.linha).filter(Boolean))].sort((a,b)=> a==='todas'?-1:(b==='todas'?1:a.localeCompare(b)));
   app.innerHTML = `
@@ -821,6 +825,7 @@ function abrirNovoProdutoModal(){
         <input id="npServ" type="number" step="0.01">
         <button class="btn" id="npCalcToggle" type="button" style="margin-top:6px;font-size:12px;padding:5px 9px">🧮 Calculadora de Serviços Brasil</button>
       </div>
+      <div class="field"><label>Tempo de fabricação</label><input id="npTempoFab" placeholder="ex.: 60 dias"></div>
     </div>
     <div class="card pad" id="npCalcBox" style="display:none;margin-top:12px;background:var(--surface-2)">
       <h4 style="font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:none;letter-spacing:0">Calculadora padrão Goldenmaq: Total = FOB (fechamento de câmbio) × 1,6 · Serviços Brasil = Total − FOB</h4>
@@ -898,6 +903,7 @@ function abrirNovoProdutoModal(){
       id, tipo, modelo, linha: linha||null, categoria: categoria||linha||null,
       descricao: document.getElementById('npDescricao').value.trim()||null,
       fob, servicos_brasil: serv, total: fob+serv,
+      tempo_fabricacao: document.getElementById('npTempoFab').value.trim()||null,
       ficha_tecnica: null,
       nota: document.getElementById('npNota').value.trim()||null,
       criadoEm: new Date().toISOString(),
@@ -926,6 +932,7 @@ function abrirEditarProdutoModal(id){
         <input id="epServ" type="number" step="0.01" value="${c.servicos_brasil??''}">
         <button class="btn" id="epCalcToggle" type="button" style="margin-top:6px;font-size:12px;padding:5px 9px">🧮 Calculadora de Serviços Brasil</button>
       </div>
+      <div class="field"><label>Tempo de fabricação</label><input id="epTempoFab" value="${esc(c.tempo_fabricacao||'')}" placeholder="ex.: 60 dias"></div>
     </div>
     <div class="card pad" id="epCalcBox" style="display:none;margin-top:12px;background:var(--surface-2)">
       <h4 style="font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:none;letter-spacing:0">Calculadora padrão Goldenmaq: Total = FOB (fechamento de câmbio) × 1,6 · Serviços Brasil = Total − FOB</h4>
@@ -1004,6 +1011,7 @@ function abrirEditarProdutoModal(id){
       ...c, tipo, modelo, linha: linha||null, categoria: categoria||linha||null,
       descricao: document.getElementById('epDescricao').value.trim()||null,
       fob, servicos_brasil: serv, total: fob+serv,
+      tempo_fabricacao: document.getElementById('epTempoFab').value.trim()||null,
       nota: document.getElementById('epNota').value.trim()||null,
       anexos: epAnexos,
       foto: primeiraImagem? primeiraImagem.url : (c.foto||null),
@@ -1014,6 +1022,39 @@ function abrirEditarProdutoModal(id){
     if(db && canWrite){ try{ await db.collection('catalogo').doc(id).set(atualizado); }catch(e){ console.error(e); toast('Alterado nesta sessão, mas não foi possível gravar no banco.'); } }
     closeModal(); toast('Produto atualizado.'); if(currentView()==='catalogo') renderCatalogo(document.getElementById('app'));
   };
+}
+/* ================= TABELA DE PREÇOS (consulta rápida) ================= */
+function renderPrecos(app){
+  app.innerHTML = `
+    <div class="pagehead"><h1>Tabela de Preços</h1><span class="hint">${CATALOGO.length} itens · consulta rápida de FOB, Serviço Brasil Total e tempo de fabricação</span></div>
+    <div class="card pad" style="margin-bottom:12px">
+      <input id="precosBusca" placeholder="Buscar por nome da máquina..." value="${esc(precosFiltro.termo)}" style="width:100%;max-width:360px">
+    </div>
+    <div class="card pad" style="overflow-x:auto">
+      <table id="precosTabela"><thead><tr><th>Nome da Máquina</th><th>FOB</th><th>Serviço Brasil Total</th><th>Tempo de Fabricação</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card pad" style="margin-top:12px">
+      <h3 style="font-size:14px;margin-bottom:10px">Comissão de Representantes</h3>
+      <div class="grid cols-2" style="gap:10px">
+        <div class="field"><label>Representante</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">5%</div><span class="hint">sobre o recebimento do Serviço Brasil</span></div>
+        <div class="field"><label>Indicação</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">1%</div><span class="hint">sobre o recebimento do Serviço Brasil</span></div>
+      </div>
+    </div>`;
+  document.getElementById('precosBusca').oninput = (e)=>{ precosFiltro.termo = e.target.value; paintTabelaPrecos(); };
+  paintTabelaPrecos();
+}
+function paintTabelaPrecos(){
+  const tbody = document.querySelector('#precosTabela tbody'); if(!tbody) return;
+  const t = precosFiltro.termo.trim().toUpperCase();
+  const list = CATALOGO.filter(c=> !t || (c.modelo||'').toUpperCase().includes(t))
+    .sort((a,b)=> (a.modelo||'').localeCompare(b.modelo||'', undefined, {numeric:true}));
+  tbody.innerHTML = list.length? list.map(c=>`
+    <tr>
+      <td><b>${esc(c.modelo)}</b>${c.categoria||c.linha? `<br><span class="hint">${esc(c.categoria||c.linha)}</span>`:''}</td>
+      <td class="mono">${fmtUSD(c.fob)}</td>
+      <td class="mono">${fmtUSD(c.total)}</td>
+      <td>${esc(c.tempo_fabricacao||'—')}</td>
+    </tr>`).join('') : `<tr><td colspan="4"><div class="empty">Nenhuma máquina encontrada.</div></td></tr>`;
 }
 function filteredCatalogo(){
   const t = catFiltro.termo.trim().toUpperCase();
