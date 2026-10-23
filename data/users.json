@@ -1,0 +1,17 @@
+{
+    "users": [
+          {
+                  "id": "u_master",
+                  "email": "administrativo@goldenmaq.com.br",
+                  "name": "Administrativo",
+                  "passwordHash": "ea3664d4be2d72495c59b74f43267610:95f2295244d939c2808c3bb7f438661f9711c303e8139b600810a7d5819577e4057d1fb5bbfab0ca50ecce28f3956c70240b9fd547fd89e3ebf41fc9f0489e26",
+                  "isMaster": true,
+                  "sections": [
+                            "*"
+                  ],
+                  "active": true,
+                  "criadoEm": "2026-10-23T00:00:00.000Z",
+                  "atualizadoEm": "2026-10-23T20:33:02.869Z"
+          }
+    ]
+}
