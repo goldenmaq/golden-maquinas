@@ -171,6 +171,10 @@
   .modal-backdrop{position:fixed;inset:0;background:rgba(8,16,30,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto}
   .modal{background:var(--surface);border-radius:10px;max-width:560px;width:100%;padding:22px}
   .modal.modal-chat{max-width:680px;padding:0;display:flex;flex-direction:column;height:min(82vh,780px);overflow:hidden;align-self:center}
+  .modal.modal-wide{max-width:860px}
+  .kpirow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpirow .kpi{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+  @media (max-width:860px){.kpirow{grid-template-columns:1fr 1fr}}
   .wa-head{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);flex:none}
   .wa-stage{padding:8px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex:none;background:var(--surface-2)}
   .wa-stage select{flex:1}
@@ -271,6 +275,7 @@
     <a class="navlink" data-view="clientes" href="#clientes"><span class="dot"></span>Clientes</a>
     <a class="navlink" data-view="contratos" href="#contratos"><span class="dot"></span>Contratos</a>
     <a class="navlink" data-view="comissoes" href="#comissoes"><span class="dot"></span>Comissões</a>
+    <a class="navlink" data-view="moldes" href="#moldes"><span class="dot"></span>Projetos Moldes</a>
     <a class="navlink" data-view="atas" href="#atas"><span class="dot"></span>Ata de Visita</a>
     <a class="navlink" data-view="ocs" href="#ocs"><span class="dot"></span>Ordem de Compra</a>
     <a class="navlink" data-view="tarefas" href="#tarefas"><span class="dot"></span>Calendário</a>
@@ -303,6 +308,7 @@ const NAV = [
   {id:'clientes', label:'Clientes'},
   {id:'contratos', label:'Contratos'},
   {id:'comissoes', label:'Comissões'},
+  {id:'moldes', label:'Projetos Moldes'},
   {id:'atas', label:'Ata de Visita'},
   {id:'ocs', label:'Ordem de Compra'},
   {id:'tarefas', label:'Calendário'},
@@ -324,6 +330,8 @@ let contratoDraft = null;
 let unsubContratos = null;
 let COMISSOES_AVULSAS = []; // comissões de vendas antigas, sem contrato cadastrado no sistema
 let unsubComissoesAvulsas = null;
+let PROJETOS_MOLDES = []; // briefings de molde solicitados por clientes, com controle de orcamento x custo real
+let unsubProjetosMoldes = null;
 let ATAS = [];
 let ataDraft = null;
 let unsubAtas = null;
@@ -764,6 +772,7 @@ async function loadCollections(){
   subscribePropostas();
   subscribeContratos();
   subscribeComissoesAvulsas();
+  subscribeProjetosMoldes();
   subscribeAtas();
   subscribeOCs();
   subscribeThreads();
@@ -801,6 +810,13 @@ function subscribeComissoesAvulsas(){
     COMISSOES_AVULSAS = snap.docs.map(d=>d.data()).sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
     if(location.hash.slice(1)==='comissoes') renderShellForRoute();
   }, err=>{ console.error('comissoes_avulsas snapshot', err); });
+}
+function subscribeProjetosMoldes(){
+  if(unsubProjetosMoldes) unsubProjetosMoldes();
+  unsubProjetosMoldes = db.collection('projetos_moldes').limit(500).onSnapshot(snap=>{
+    PROJETOS_MOLDES = snap.docs.map(d=>d.data()).sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
+    if(location.hash.slice(1)==='moldes') renderShellForRoute();
+  }, err=>{ console.error('projetos_moldes snapshot', err); });
 }
 function subscribeAtas(){
   if(unsubAtas) unsubAtas();
@@ -862,6 +878,7 @@ function renderShellForRoute(){
   if(view==='clientes') return renderClientes(app);
   if(view==='contratos') return renderContratos(app);
   if(view==='comissoes') return renderComissoes(app);
+  if(view==='moldes') return renderProjetosMoldes(app);
   if(view==='atas') return renderAtas(app);
   if(view==='ocs') return renderOCs(app);
   if(view==='tarefas') return renderTarefas(app);
@@ -4556,6 +4573,271 @@ function abrirComissaoModal(numero){
     if(db && canWrite){ try{ await db.collection('contratos').doc(docIdFromNumero(c.numero)).update({comissao}); }catch(e){ console.error(e); toast('Comissão salva nesta sessão, mas não foi possível gravar no banco.'); } }
     closeModal(); toast('Comissão salva.'); renderComissoes(document.getElementById('app'));
   };
+}
+
+/* ================= PROJETOS MOLDES ================= */
+const CATEGORIAS_CUSTO_MOLDE = ['Aço/Matéria-prima','Usinagem/Terceirizados','Mão de obra interna','Try-outs/Amostras/Testes','Outros'];
+const STATUS_PROJETO_MOLDE = ['Em orçamentação','Orçamento enviado','Aprovado pelo cliente','Em fabricação','Concluído','Cancelado'];
+function custoTotalMolde(p){ return (p.custos||[]).reduce((s,c)=> s + (Number(c.valor)||0), 0); }
+function statusOrcamentoMolde(p){
+  const orc = Number(p.orcamentoEstimado)||0;
+  const gasto = custoTotalMolde(p);
+  if(!orc) return {pill:'warn', label: gasto? `Sem orçamento definido · ${fmtBRL(gasto)} já gastos` : 'Sem orçamento definido'};
+  if(gasto > orc) return {pill:'danger', label:`Sobreorçamento · +${fmtBRL(gasto-orc)}`};
+  const pct = gasto/orc;
+  if(pct >= 0.85) return {pill:'warn', label:`Atenção · ${Math.round(pct*100)}% usado`};
+  return {pill:'ok', label:`Dentro do orçamento · ${Math.round(pct*100)}% usado`};
+}
+function renderProjetosMoldes(app){
+  app.innerHTML = `
+    <div class="pagehead">
+      <h1>Projetos Moldes</h1>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="hint">${PROJETOS_MOLDES.length} projeto(s) · briefing técnico/comercial e controle de orçamento × custo real</span>
+        ${canWrite? `<button class="btn primary" id="btnNovoProjetoMolde">+ Novo projeto</button>`:''}
+      </div>
+    </div>
+    <div class="card pad" id="pmLista"></div>`;
+  if(canWrite){ document.getElementById('btnNovoProjetoMolde').onclick = ()=> abrirProjetoMoldeModal(null); }
+  const el = document.getElementById('pmLista');
+  if(!PROJETOS_MOLDES.length){ el.innerHTML = `<div class="empty"><b>Nenhum projeto de molde cadastrado ainda</b>Clique em "+ Novo projeto" quando um cliente solicitar um orçamento de molde, para levantar os dados técnicos e acompanhar o orçamento × custo real.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Projeto</th><th>Cliente</th><th>Status</th><th>Orçado</th><th>Custo lançado</th><th>Situação</th><th></th></tr></thead><tbody>
+    ${PROJETOS_MOLDES.map(p=>{
+      const gasto = custoTotalMolde(p);
+      const st = statusOrcamentoMolde(p);
+      return `<tr>
+        <td><b>${esc(p.nomeProjeto||'—')}</b>${p.peca? `<br><span class="hint">${esc(p.peca).slice(0,70)}</span>`:''}</td>
+        <td>${esc(p.clienteNome||'—')}</td>
+        <td><span class="pill aguardando">${esc(p.status||'Em orçamentação')}</span></td>
+        <td>${fmtBRL(p.orcamentoEstimado)}</td>
+        <td>${fmtBRL(gasto)}</td>
+        <td><span class="pill ${st.pill}">${esc(st.label)}</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn" data-pmver="${esc(p.id)}" style="padding:5px 9px;font-size:12px">Ver detalhes</button>
+          ${canWrite? `<button class="btn danger" data-pmdel="${esc(p.id)}" style="padding:5px 9px;font-size:12px">Excluir</button>`:''}
+        </td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+  el.querySelectorAll('[data-pmver]').forEach(b=> b.onclick = ()=> verProjetoMoldeModal(b.dataset.pmver));
+  el.querySelectorAll('[data-pmdel]').forEach(b=> b.onclick = ()=> excluirProjetoMolde(b.dataset.pmdel));
+}
+async function excluirProjetoMolde(id){
+  const p = PROJETOS_MOLDES.find(x=>x.id===id); if(!p) return;
+  openModal(`<h2 style="font-size:17px;margin-bottom:10px">Excluir projeto de molde</h2>
+    <p>Tem certeza que deseja excluir o projeto <b>${esc(p.nomeProjeto||'—')}</b> (${esc(p.clienteNome||'—')})? Esta ação não pode ser desfeita.</p>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="btnConfirmaExcluirMolde">Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnConfirmaExcluirMolde').onclick = async ()=>{
+    if(db && canWrite){ try{ await db.collection('projetos_moldes').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+    PROJETOS_MOLDES = PROJETOS_MOLDES.filter(x=>x.id!==id);
+    closeModal(); toast('Projeto excluído.'); if(currentView()==='moldes') renderProjetosMoldes(document.getElementById('app'));
+  };
+}
+function abrirProjetoMoldeModal(id){
+  const editando = !!id;
+  const p = editando ? PROJETOS_MOLDES.find(x=>x.id===id) : {
+    id: 'pm_'+uid(), clienteId:null, clienteNome:'', contato:'', email:'',
+    nomeProjeto:'', tipoCotacao:'Molde novo', dataSolicitacaoISO: todayISO(), prazoDesejado:'',
+    peca:'', dimensoes:'', peso:'', resina:'', volumeMensal:'', cavidades:'',
+    injetora:'', localEntrega:'', orcamentoEstimado:null, status:'Em orçamentação', observacoes:'',
+    custos: [], criadoEm: new Date().toISOString(),
+  };
+  if(!p){ toast('Projeto não encontrado.'); return; }
+  openModal(`
+    <h3 style="margin-bottom:4px">${editando? 'Editar projeto de molde' : 'Novo projeto de molde'}</h3>
+    <p class="hint" style="margin-bottom:14px">Levantamento de dados para cotação de molde — preencha com o que o cliente informar; o restante pode ficar em branco e ser completado depois.</p>
+    <form id="formProjetoMolde" style="display:flex;flex-direction:column;gap:14px">
+      <h3 style="font-size:13px;color:var(--muted);margin:0">Identificação do cliente e do projeto</h3>
+      <div class="grid cols-2" style="gap:10px">
+        <div class="field"><label>Cliente cadastrado (opcional)</label>
+          <select id="pmClienteId"><option value="">— selecionar da base de clientes —</option>${CLIENTES.slice(0,1000).map(c=>`<option value="${esc(c.id)}" ${p.clienteId===c.id?'selected':''}>${esc(c.nome_fantasia||c.razao_social)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Cliente / Razão social *</label><input id="pmClienteNome" value="${esc(p.clienteNome)}" placeholder="preenchido ao selecionar acima, ou digite"></div>
+        <div class="field"><label>Nome do projeto / Código da peça *</label><input id="pmNomeProjeto" value="${esc(p.nomeProjeto)}"></div>
+        <div class="field"><label>Tipo de cotação</label>
+          <select id="pmTipoCotacao">${['Molde novo','Duplicação de molde existente','Alteração','Reposição'].map(t=>`<option ${p.tipoCotacao===t?'selected':''}>${t}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Data da solicitação</label><input id="pmData" type="date" value="${esc(p.dataSolicitacaoISO||todayISO())}"></div>
+        <div class="field"><label>Prazo desejado (proposta/entrega)</label><input id="pmPrazo" value="${esc(p.prazoDesejado)}" placeholder="ex.: proposta em 7 dias · entrega em 90 dias"></div>
+        <div class="field"><label>Contato / cargo</label><input id="pmContato" value="${esc(p.contato)}"></div>
+        <div class="field"><label>E-mail / telefone</label><input id="pmEmailTel" value="${esc(p.email)}"></div>
+      </div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Peça e material</h3>
+      <div class="field"><label>Peça / aplicação / setor</label><textarea id="pmPeca" rows="2" placeholder="ex.: tampa de caixa elétrica, setor elétrico">${esc(p.peca)}</textarea></div>
+      <div class="grid cols-3" style="gap:10px">
+        <div class="field"><label>Dimensões (C×L×A, mm)</label><input id="pmDimensoes" value="${esc(p.dimensoes)}"></div>
+        <div class="field"><label>Peso estimado (g)</label><input id="pmPeso" value="${esc(p.peso)}"></div>
+        <div class="field"><label>Resina / grade / cor</label><input id="pmResina" value="${esc(p.resina)}" placeholder="ex.: PP H0220 natural"></div>
+      </div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Produção e máquina</h3>
+      <div class="grid cols-3" style="gap:10px">
+        <div class="field"><label>Volume mensal (peças)</label><input id="pmVolume" value="${esc(p.volumeMensal)}"></div>
+        <div class="field"><label>Cavidades desejadas</label><input id="pmCavidades" value="${esc(p.cavidades)}"></div>
+        <div class="field"><label>Injetora disponível</label><input id="pmInjetora" value="${esc(p.injetora)}" placeholder="marca/modelo/tonelagem, ou a definir"></div>
+      </div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Comercial</h3>
+      <div class="grid cols-3" style="gap:10px">
+        <div class="field"><label>Local de entrega</label><input id="pmLocalEntrega" value="${esc(p.localEntrega)}"></div>
+        <div class="field"><label>Orçamento estimado (R$)</label><input id="pmOrcamento" type="number" step="0.01" value="${p.orcamentoEstimado||''}"></div>
+        <div class="field"><label>Status</label>
+          <select id="pmStatus">${STATUS_PROJETO_MOLDE.map(s=>`<option ${p.status===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field"><label>Observações / pendências</label><textarea id="pmObs" rows="2">${esc(p.observacoes)}</textarea></div>
+    </form>
+    <div id="pmErro" class="hint" style="color:var(--danger);display:none;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarProjetoMolde">Salvar projeto</button>
+    </div>
+  `, 'modal-wide');
+  document.getElementById('pmClienteId').onchange = e=>{
+    const c = CLIENTES.find(x=>x.id===e.target.value);
+    if(c){
+      document.getElementById('pmClienteNome').value = c.nome_fantasia||c.razao_social||'';
+      document.getElementById('pmContato').value = c.contato||'';
+      document.getElementById('pmEmailTel').value = c.email||c.telefone||'';
+    }
+  };
+  document.getElementById('btnSalvarProjetoMolde').onclick = async ()=>{
+    const clienteNome = document.getElementById('pmClienteNome').value.trim();
+    const nomeProjeto = document.getElementById('pmNomeProjeto').value.trim();
+    if(!clienteNome || !nomeProjeto){ const erro=document.getElementById('pmErro'); erro.textContent='Informe o cliente e o nome do projeto.'; erro.style.display=''; return; }
+    const registro = {
+      ...p,
+      clienteId: document.getElementById('pmClienteId').value || null,
+      clienteNome,
+      contato: document.getElementById('pmContato').value.trim(),
+      email: document.getElementById('pmEmailTel').value.trim(),
+      nomeProjeto,
+      tipoCotacao: document.getElementById('pmTipoCotacao').value,
+      dataSolicitacaoISO: document.getElementById('pmData').value || todayISO(),
+      prazoDesejado: document.getElementById('pmPrazo').value.trim(),
+      peca: document.getElementById('pmPeca').value.trim(),
+      dimensoes: document.getElementById('pmDimensoes').value.trim(),
+      peso: document.getElementById('pmPeso').value.trim(),
+      resina: document.getElementById('pmResina').value.trim(),
+      volumeMensal: document.getElementById('pmVolume').value.trim(),
+      cavidades: document.getElementById('pmCavidades').value.trim(),
+      injetora: document.getElementById('pmInjetora').value.trim(),
+      localEntrega: document.getElementById('pmLocalEntrega').value.trim(),
+      orcamentoEstimado: Number(document.getElementById('pmOrcamento').value)||null,
+      status: document.getElementById('pmStatus').value,
+      observacoes: document.getElementById('pmObs').value.trim(),
+      custos: p.custos||[],
+      atualizadoEm: new Date().toISOString(),
+    };
+    const idx = PROJETOS_MOLDES.findIndex(x=>x.id===registro.id);
+    if(idx>=0) PROJETOS_MOLDES[idx] = registro; else PROJETOS_MOLDES.unshift(registro);
+    if(db && canWrite){ try{ await db.collection('projetos_moldes').doc(registro.id).set(registro); }catch(e){ console.error(e); toast('Projeto salvo nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Projeto de molde salvo.');
+    if(currentView()==='moldes') renderProjetosMoldes(document.getElementById('app'));
+  };
+}
+function verProjetoMoldeModal(id){
+  const p = PROJETOS_MOLDES.find(x=>x.id===id); if(!p) return;
+  const gasto = custoTotalMolde(p);
+  const orc = Number(p.orcamentoEstimado)||0;
+  const saldo = orc - gasto;
+  const st = statusOrcamentoMolde(p);
+  const custosOrdenados = (p.custos||[]).slice().sort((a,b)=> (b.dataISO||'').localeCompare(a.dataISO||''));
+  openModal(`
+    <h3 style="margin-bottom:2px">${esc(p.nomeProjeto||'—')}</h3>
+    <p class="hint" style="margin-bottom:14px">${esc(p.clienteNome||'—')} · ${esc(p.tipoCotacao||'')} · status: <b>${esc(p.status||'—')}</b></p>
+    <div class="kpirow">
+      <div class="kpi"><b>${fmtBRL(orc)}</b><span>Orçado</span></div>
+      <div class="kpi"><b>${fmtBRL(gasto)}</b><span>Custo lançado</span></div>
+      <div class="kpi"><b style="${saldo<0?'color:var(--danger)':''}">${fmtBRL(saldo)}</b><span>Saldo</span></div>
+      <div class="kpi" style="display:flex;align-items:center"><span class="pill ${st.pill}">${esc(st.label)}</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;font-size:13px;margin-bottom:16px">
+      <div><span class="hint">Peça / aplicação</span><br>${esc(p.peca||'—')}</div>
+      <div><span class="hint">Dimensões / peso</span><br>${esc(p.dimensoes||'—')}${p.peso? ' · '+esc(p.peso)+' g':''}</div>
+      <div><span class="hint">Resina / grade / cor</span><br>${esc(p.resina||'—')}</div>
+      <div><span class="hint">Volume mensal / cavidades</span><br>${esc(p.volumeMensal||'—')}${p.cavidades? ' · '+esc(p.cavidades)+' cav.':''}</div>
+      <div><span class="hint">Injetora disponível</span><br>${esc(p.injetora||'—')}</div>
+      <div><span class="hint">Local de entrega / prazo</span><br>${esc(p.localEntrega||'—')}${p.prazoDesejado? ' · '+esc(p.prazoDesejado):''}</div>
+    </div>
+    ${p.observacoes? `<p class="hint" style="white-space:pre-wrap;margin-bottom:14px">${esc(p.observacoes)}</p>`:''}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <h3 style="font-size:13px;color:var(--muted);margin:0">Lançamentos de custo</h3>
+      ${canWrite? `<button class="btn" id="btnLancarCusto" style="font-size:12px;padding:5px 9px">+ Lançar custo</button>`:''}
+    </div>
+    ${custosOrdenados.length? `<table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th></th></tr></thead><tbody>
+      ${custosOrdenados.map(c=>`<tr>
+        <td>${esc(fmtDiaBR(c.dataISO))}</td>
+        <td>${esc(c.categoria||'—')}</td>
+        <td>${esc(c.descricao||'—')}</td>
+        <td>${fmtBRL(c.valor)}</td>
+        <td style="white-space:nowrap">
+          ${canWrite? `<button class="btn" data-custoedit="${esc(c.id)}" style="padding:4px 8px;font-size:11px">Editar</button>
+          <button class="btn danger" data-custodel="${esc(c.id)}" style="padding:4px 8px;font-size:11px">Excluir</button>`:''}
+        </td>
+      </tr>`).join('')}
+    </tbody></table>` : `<p class="hint">Nenhum custo lançado ainda.</p>`}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px">
+      <button class="btn" onclick="closeModal()">Fechar</button>
+      ${canWrite? `<button class="btn" id="btnEditarProjetoMolde">✎ Editar projeto</button>`:''}
+    </div>
+  `, 'modal-wide');
+  if(canWrite){
+    document.getElementById('btnLancarCusto').onclick = ()=> abrirLancamentoCustoModal(p.id, null);
+    document.getElementById('btnEditarProjetoMolde').onclick = ()=>{ closeModal(); abrirProjetoMoldeModal(p.id); };
+    document.querySelectorAll('[data-custoedit]').forEach(b=> b.onclick = ()=> abrirLancamentoCustoModal(p.id, (p.custos||[]).find(x=>x.id===b.dataset.custoedit)));
+    document.querySelectorAll('[data-custodel]').forEach(b=> b.onclick = ()=> excluirLancamentoCusto(p.id, b.dataset.custodel));
+  }
+}
+function abrirLancamentoCustoModal(projetoId, custo){
+  const p = PROJETOS_MOLDES.find(x=>x.id===projetoId); if(!p) return;
+  const editando = !!custo;
+  const c = custo || { id: uid(), categoria: CATEGORIAS_CUSTO_MOLDE[0], descricao:'', valor:null, dataISO: todayISO() };
+  openModal(`
+    <h3 style="margin-bottom:12px">${editando? 'Editar lançamento de custo' : 'Lançar custo'}</h3>
+    <form id="formCustoMolde" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>Categoria</label>
+        <select id="cmCategoria">${CATEGORIAS_CUSTO_MOLDE.map(cat=>`<option ${c.categoria===cat?'selected':''}>${cat}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Descrição ${c.categoria==='Outros'?'(obrigatório para "Outros")':''}</label><input id="cmDescricao" value="${esc(c.descricao)}" placeholder="ex.: aço P20 — fornecedor XYZ"></div>
+      <div class="field"><label>Valor (R$)</label><input id="cmValor" type="number" step="0.01" value="${c.valor||''}"></div>
+      <div class="field"><label>Data</label><input id="cmData" type="date" value="${esc(c.dataISO||todayISO())}"></div>
+    </form>
+    <div id="cmErro" class="hint" style="color:var(--danger);display:none;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarCustoMolde">Salvar lançamento</button>
+    </div>
+  `);
+  document.getElementById('btnSalvarCustoMolde').onclick = async ()=>{
+    const valor = Number(document.getElementById('cmValor').value)||0;
+    const categoria = document.getElementById('cmCategoria').value;
+    const descricao = document.getElementById('cmDescricao').value.trim();
+    const erro = document.getElementById('cmErro');
+    if(!valor){ erro.textContent='Informe o valor do custo.'; erro.style.display=''; return; }
+    if(categoria==='Outros' && !descricao){ erro.textContent='Descreva o custo quando a categoria for "Outros".'; erro.style.display=''; return; }
+    const registro = {
+      id: c.id, categoria, descricao, valor,
+      dataISO: document.getElementById('cmData').value || todayISO(),
+      criadoEm: editando? c.criadoEm : new Date().toISOString(),
+    };
+    const custos = (p.custos||[]).slice();
+    const idx = custos.findIndex(x=>x.id===registro.id);
+    if(idx>=0) custos[idx] = registro; else custos.push(registro);
+    p.custos = custos; p.atualizadoEm = new Date().toISOString();
+    const idxP = PROJETOS_MOLDES.findIndex(x=>x.id===p.id); if(idxP>=0) PROJETOS_MOLDES[idxP]=p;
+    if(db && canWrite){ try{ await db.collection('projetos_moldes').doc(p.id).update({custos, atualizadoEm:p.atualizadoEm}); }catch(e){ console.error(e); toast('Custo salvo nesta sessão, mas não foi possível gravar no banco.'); } }
+    toast('Custo lançado.'); verProjetoMoldeModal(p.id);
+  };
+}
+async function excluirLancamentoCusto(projetoId, custoId){
+  const p = PROJETOS_MOLDES.find(x=>x.id===projetoId); if(!p) return;
+  const custos = (p.custos||[]).filter(x=>x.id!==custoId);
+  p.custos = custos; p.atualizadoEm = new Date().toISOString();
+  const idxP = PROJETOS_MOLDES.findIndex(x=>x.id===p.id); if(idxP>=0) PROJETOS_MOLDES[idxP]=p;
+  if(db && canWrite){ try{ await db.collection('projetos_moldes').doc(p.id).update({custos, atualizadoEm:p.atualizadoEm}); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+  toast('Lançamento excluído.'); verProjetoMoldeModal(p.id);
 }
 
 function renderNovoContrato(app){
