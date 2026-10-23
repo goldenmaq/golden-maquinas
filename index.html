@@ -2593,8 +2593,11 @@ async function processarDitadoAtaIA(manual){
   ataDitadoBusy = true;
   atualizarStatusDitadoAta('✨ IA lendo e preenchendo...');
   try{
-    const sample = await claude.use('sample');
-    if(!sample){ toast('Preenchimento automático por IA não está disponível nesta visualização.'); atualizarStatusDitadoAta(''); ataDitadoBusy=false; return; }
+    let sample = null;
+    if(temClaudeRuntime()){
+      sample = await claude.use('sample');
+      if(!sample){ toast('Preenchimento automático por IA não está disponível nesta visualização.'); atualizarStatusDitadoAta(''); ataDitadoBusy=false; return; }
+    }
     const a = ataDraft;
     const contextoAtual = {
       representante: a.representante, tipoVisita: a.tipoVisita, cliente: a.cliente, responsavel: a.responsavel,
@@ -2632,7 +2635,15 @@ REGRAS IMPORTANTES:
 - Nunca mude cliente.clienteId.
 - Todos os textos livres (nomes, cidade, produto, dimensões, observações etc.) em português, direto, sem floreios.
 Responda SOMENTE o JSON, sem comentários.`;
-    const resultado = await sample.json(prompt);
+    let resultado;
+    if(sample){
+      resultado = await sample.json(prompt);
+    } else {
+      const resp = await fetch('/api/ia-ata', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ prompt }) });
+      const json = await resp.json().catch(()=>({}));
+      if(!resp.ok){ throw new Error(json.error || ('Falha ao chamar IA ('+resp.status+')')); }
+      resultado = json.data;
+    }
     mesclarDitadoAtaIA(resultado);
     atualizarStatusDitadoAta('✓ Campos atualizados pela IA');
     setTimeout(()=> atualizarStatusDitadoAta(''), 4000);
@@ -2640,7 +2651,9 @@ Responda SOMENTE o JSON, sem comentários.`;
   }catch(e){
     console.error(e);
     atualizarStatusDitadoAta('');
-    toast('Não foi possível preencher com IA agora. Tente novamente.');
+    const msg = (e && e.message) || '';
+    if(/ANTHROPIC_API_KEY/i.test(msg)) toast('IA não configurada: defina ANTHROPIC_API_KEY nas variáveis de ambiente do projeto na Vercel (Settings → Environment Variables) e faça um novo deploy.');
+    else toast('Não foi possível preencher com IA agora. Tente novamente.');
   }finally{
     ataDitadoBusy = false;
   }
