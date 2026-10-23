@@ -270,6 +270,7 @@
     <a class="navlink" data-view="precos" href="#precos"><span class="dot"></span>Tabela de Preços</a>
     <a class="navlink" data-view="clientes" href="#clientes"><span class="dot"></span>Clientes</a>
     <a class="navlink" data-view="contratos" href="#contratos"><span class="dot"></span>Contratos</a>
+    <a class="navlink" data-view="comissoes" href="#comissoes"><span class="dot"></span>Comissões</a>
     <a class="navlink" data-view="atas" href="#atas"><span class="dot"></span>Ata de Visita</a>
     <a class="navlink" data-view="ocs" href="#ocs"><span class="dot"></span>Ordem de Compra</a>
     <a class="navlink" data-view="tarefas" href="#tarefas"><span class="dot"></span>Calendário</a>
@@ -301,6 +302,7 @@ const NAV = [
   {id:'precos', label:'Tabela de Preços'},
   {id:'clientes', label:'Clientes'},
   {id:'contratos', label:'Contratos'},
+  {id:'comissoes', label:'Comissões'},
   {id:'atas', label:'Ata de Visita'},
   {id:'ocs', label:'Ordem de Compra'},
   {id:'tarefas', label:'Calendário'},
@@ -849,6 +851,7 @@ function renderShellForRoute(){
   if(view==='precos') return renderPrecos(app);
   if(view==='clientes') return renderClientes(app);
   if(view==='contratos') return renderContratos(app);
+  if(view==='comissoes') return renderComissoes(app);
   if(view==='atas') return renderAtas(app);
   if(view==='ocs') return renderOCs(app);
   if(view==='tarefas') return renderTarefas(app);
@@ -4354,6 +4357,95 @@ function renderContratos(app){
       closeModal(); toast('Contrato excluído.'); renderContratos(document.getElementById('app'));
     };
   });
+}
+
+/* -- Comissões: representante e/ou indicador por contrato, com valor devido e forma de pagamento.
+   Fica num espaço próprio (não entra no texto do contrato gerado para o cliente). -- */
+function valorBaseContrato(c){
+  if(c.comissao && c.comissao.valorBaseUSD!=null) return c.comissao.valorBaseUSD;
+  if(c.proposta && c.proposta.valorTotalUSD!=null) return c.proposta.valorTotalUSD;
+  return 0;
+}
+function renderComissoes(app){
+  app.innerHTML = `
+    <div class="pagehead"><h1>Comissões</h1><span class="hint">${CONTRATOS.length} contrato(s) · comissão de representante e/ou indicador, por venda efetivada</span></div>
+    <div class="card pad" id="comLista"></div>`;
+  const el = document.getElementById('comLista');
+  if(!CONTRATOS.length){ el.innerHTML = `<div class="empty"><b>Nenhum contrato cadastrado ainda</b>As comissões aparecem aqui conforme os contratos forem gerados em "Contratos".</div>`; return; }
+  const lista = [...CONTRATOS].sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
+  el.innerHTML = `<table><thead><tr><th>Contrato</th><th>Comprador</th><th>Valor da venda</th><th>Representante</th><th>Indicador</th><th></th></tr></thead><tbody>
+    ${lista.map(c=>{
+      const com = c.comissao || {};
+      const rep = com.representante, ind = com.indicador;
+      return `<tr>
+        <td class="mono">${esc(c.numero)}</td>
+        <td>${esc(c.comprador?.razaoSocial||c.comprador?.nomeFantasia||'—')}</td>
+        <td>${fmtUSD(valorBaseContrato(c))}</td>
+        <td>${rep? `${esc(rep.nome||'—')} · ${rep.percentual}% · <b>${fmtUSD(rep.valor)}</b>${rep.formaPagamento? `<br><span class="hint">${esc(rep.formaPagamento)}</span>`:''}` : '<span class="hint">—</span>'}</td>
+        <td>${ind? `${esc(ind.nome||'—')} · ${ind.percentual}% · <b>${fmtUSD(ind.valor)}</b>${ind.formaPagamento? `<br><span class="hint">${esc(ind.formaPagamento)}</span>`:''}` : '<span class="hint">—</span>'}</td>
+        <td><button class="btn" data-comedit="${esc(c.numero)}" style="padding:5px 9px;font-size:12px">Editar comissão</button></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+  el.querySelectorAll('[data-comedit]').forEach(b=> b.onclick = ()=> abrirComissaoModal(b.dataset.comedit));
+}
+function abrirComissaoModal(numero){
+  const c = CONTRATOS.find(x=>x.numero===numero); if(!c) return;
+  const com = c.comissao || {};
+  const base = valorBaseContrato(c);
+  const rep = com.representante || {nome:'', percentual:'', formaPagamento:''};
+  const ind = com.indicador || {nome:'', percentual:'', formaPagamento:''};
+  openModal(`
+    <h3 style="margin-bottom:4px">Comissão — ${esc(c.numero)}</h3>
+    <p class="hint" style="margin-bottom:14px">${esc(c.comprador?.razaoSocial||c.comprador?.nomeFantasia||'—')} · informação interna — não entra no contrato gerado para o cliente.</p>
+    <form id="formComissao" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>Valor total da venda (USD)</label><input id="comBase" type="number" step="0.01" value="${base||''}"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Representante (vendedor)</h3>
+      <div class="field"><label>Representante</label>
+        <select id="comRepNome"><option value="">Nenhum</option>${REPRESENTANTES.map(r=>`<option ${rep.nome===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>% de comissão</label><input id="comRepPct" type="number" step="0.01" min="0" max="100" value="${rep.percentual||''}"></div>
+      <div class="field"><label>Valor devido</label><div id="comRepValor" style="font-size:16px;font-weight:700;color:var(--navy-deep)">${fmtUSD(rep.valor||0)}</div></div>
+      <div class="field"><label>Forma de pagamento</label><input id="comRepForma" value="${esc(rep.formaPagamento)}" placeholder="ex.: conforme recebimento do Serviço Brasil"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Indicador</h3>
+      <div class="field"><label>Nome do indicador</label><input id="comIndNome" value="${esc(ind.nome)}"></div>
+      <div class="field"><label>% de comissão</label><input id="comIndPct" type="number" step="0.01" min="0" max="100" value="${ind.percentual||''}"></div>
+      <div class="field"><label>Valor devido</label><div id="comIndValor" style="font-size:16px;font-weight:700;color:var(--navy-deep)">${fmtUSD(ind.valor||0)}</div></div>
+      <div class="field"><label>Forma de pagamento</label><input id="comIndForma" value="${esc(ind.formaPagamento)}" placeholder="ex.: à vista em até 10 dias após o pagamento do cliente"></div>
+    </form>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarComissao">Salvar comissão</button>
+    </div>
+  `);
+  const recalc = ()=>{
+    const baseV = Number(document.getElementById('comBase').value)||0;
+    const repPct = Number(document.getElementById('comRepPct').value)||0;
+    const indPct = Number(document.getElementById('comIndPct').value)||0;
+    document.getElementById('comRepValor').textContent = fmtUSD(baseV * repPct / 100);
+    document.getElementById('comIndValor').textContent = fmtUSD(baseV * indPct / 100);
+  };
+  ['comBase','comRepPct','comIndPct'].forEach(id=> document.getElementById(id).addEventListener('input', recalc));
+  document.getElementById('btnSalvarComissao').onclick = async ()=>{
+    const baseV = Number(document.getElementById('comBase').value)||0;
+    const repNome = document.getElementById('comRepNome').value;
+    const repPct = Number(document.getElementById('comRepPct').value)||0;
+    const repForma = document.getElementById('comRepForma').value.trim();
+    const indNome = document.getElementById('comIndNome').value.trim();
+    const indPct = Number(document.getElementById('comIndPct').value)||0;
+    const indForma = document.getElementById('comIndForma').value.trim();
+    const comissao = {
+      valorBaseUSD: baseV,
+      representante: (repNome||repPct||repForma) ? { nome: repNome, percentual: repPct, valor: baseV*repPct/100, formaPagamento: repForma } : null,
+      indicador: (indNome||indPct||indForma) ? { nome: indNome, percentual: indPct, valor: baseV*indPct/100, formaPagamento: indForma } : null,
+      atualizadoEm: new Date().toISOString(),
+    };
+    c.comissao = comissao;
+    const idx = CONTRATOS.findIndex(x=>x.numero===c.numero);
+    if(idx>=0) CONTRATOS[idx] = c;
+    if(db && canWrite){ try{ await db.collection('contratos').doc(docIdFromNumero(c.numero)).update({comissao}); }catch(e){ console.error(e); toast('Comissão salva nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Comissão salva.'); renderComissoes(document.getElementById('app'));
+  };
 }
 
 function renderNovoContrato(app){
