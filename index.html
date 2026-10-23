@@ -1462,9 +1462,14 @@ function filteredCatalogo(){
     return true;
   }).sort((a,b)=> (a.modelo||'').localeCompare(b.modelo||'', undefined, {numeric:true}));
 }
+// Selo "NOVO": só vale para produtos cadastrados a partir desta data —
+// evita que todo o catálogo já existente apareça marcado como novo.
+const CATALOGO_NOVO_DESDE = '2026-10-23T21:04:37.000Z';
 function ehProdutoNovo(c){
   if(!c.criadoEm) return false;
-  const dias = (Date.now() - new Date(c.criadoEm).getTime()) / 86400000;
+  const criado = new Date(c.criadoEm).getTime();
+  if(criado < new Date(CATALOGO_NOVO_DESDE).getTime()) return false;
+  const dias = (Date.now() - criado) / 86400000;
   return dias >= 0 && dias <= 14;
 }
 function paintCatGrid(){
