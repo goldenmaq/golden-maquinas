@@ -24,6 +24,21 @@
       ],
       "active": true,
       "criadoEm": "2026-10-23T20:55:26.366Z"
+    },
+    {
+      "id": "u_mvlhqrmb_wl3893",
+      "email": "servico.rbtech@gmail.com",
+      "name": "Ramon",
+      "passwordHash": "dcd6284988a060fe29aaa0d896035aaa:a23440bd84e2dabe88ef05107d4a2e660f389255d3ef2853cf6a957bc9d0eea84464a6a1a7a9a3a9536cc27e7b8d150171dea6a86146c112901ae16d33690de4",
+      "isMaster": false,
+      "sections": [
+        "catalogo",
+        "clientes",
+        "ocs",
+        "mensagens"
+      ],
+      "active": true,
+      "criadoEm": "2026-10-23T21:37:34.611Z"
     }
   ]
 }
