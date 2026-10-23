@@ -322,6 +322,8 @@ let unsubProp = null;
 let CONTRATOS = [];
 let contratoDraft = null;
 let unsubContratos = null;
+let COMISSOES_AVULSAS = []; // comissões de vendas antigas, sem contrato cadastrado no sistema
+let unsubComissoesAvulsas = null;
 let ATAS = [];
 let ataDraft = null;
 let unsubAtas = null;
@@ -761,6 +763,7 @@ async function loadCollections(){
   CLIENTES = cliSnap.docs.map(d=>d.data());
   subscribePropostas();
   subscribeContratos();
+  subscribeComissoesAvulsas();
   subscribeAtas();
   subscribeOCs();
   subscribeThreads();
@@ -791,6 +794,13 @@ function subscribeContratos(){
     CONTRATOS = snap.docs.map(d=>d.data()).sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
     if(location.hash.slice(1)==='contratos' && !contratoDraft) renderShellForRoute();
   }, err=>{ console.error('contratos snapshot', err); });
+}
+function subscribeComissoesAvulsas(){
+  if(unsubComissoesAvulsas) unsubComissoesAvulsas();
+  unsubComissoesAvulsas = db.collection('comissoes_avulsas').limit(500).onSnapshot(snap=>{
+    COMISSOES_AVULSAS = snap.docs.map(d=>d.data()).sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
+    if(location.hash.slice(1)==='comissoes') renderShellForRoute();
+  }, err=>{ console.error('comissoes_avulsas snapshot', err); });
 }
 function subscribeAtas(){
   if(unsubAtas) unsubAtas();
@@ -4367,27 +4377,127 @@ function valorBaseContrato(c){
   return 0;
 }
 function renderComissoes(app){
+  const total = CONTRATOS.length + COMISSOES_AVULSAS.length;
   app.innerHTML = `
-    <div class="pagehead"><h1>Comissões</h1><span class="hint">${CONTRATOS.length} contrato(s) · comissão de representante e/ou indicador, por venda efetivada</span></div>
+    <div class="pagehead">
+      <h1>Comissões</h1>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="hint">${total} registro(s) · comissão de representante e/ou indicador, por venda efetivada</span>
+        <button class="btn primary" id="btnComissaoAntiga" title="Cadastrar comissão de uma venda antiga, que não está registrada como Contrato no sistema">+ Comissão antiga</button>
+      </div>
+    </div>
     <div class="card pad" id="comLista"></div>`;
+  document.getElementById('btnComissaoAntiga').onclick = ()=> abrirComissaoAvulsaModal(null);
   const el = document.getElementById('comLista');
-  if(!CONTRATOS.length){ el.innerHTML = `<div class="empty"><b>Nenhum contrato cadastrado ainda</b>As comissões aparecem aqui conforme os contratos forem gerados em "Contratos".</div>`; return; }
-  const lista = [...CONTRATOS].sort((a,b)=> (b.criadoEm||'').localeCompare(a.criadoEm||''));
-  el.innerHTML = `<table><thead><tr><th>Contrato</th><th>Comprador</th><th>Valor da venda</th><th>Representante</th><th>Indicador</th><th></th></tr></thead><tbody>
-    ${lista.map(c=>{
-      const com = c.comissao || {};
-      const rep = com.representante, ind = com.indicador;
+  if(!total){ el.innerHTML = `<div class="empty"><b>Nenhuma comissão cadastrada ainda</b>Elas aparecem aqui conforme os contratos forem gerados em "Contratos", ou clique em "+ Comissão antiga" para registrar uma venda que já aconteceu mas não está no sistema.</div>`; return; }
+  const linhasContrato = CONTRATOS.map(c=>({
+    tipo:'contrato', chave:c.numero, origem:c.numero, cliente:c.comprador?.razaoSocial||c.comprador?.nomeFantasia||'—',
+    data:c.dataBR||'', valor:valorBaseContrato(c), comissao:c.comissao||{}, ordenar:c.criadoEm||'',
+  }));
+  const linhasAvulsa = COMISSOES_AVULSAS.map(r=>({
+    tipo:'avulsa', chave:r.id, origem:'Venda antiga', cliente:r.cliente||'—',
+    data:r.dataVendaBR||'', valor:r.valorBaseUSD||0, comissao:r, ordenar:r.criadoEm||'',
+  }));
+  const lista = [...linhasContrato, ...linhasAvulsa].sort((a,b)=> (b.ordenar||'').localeCompare(a.ordenar||''));
+  el.innerHTML = `<table><thead><tr><th>Origem</th><th>Cliente</th><th>Data</th><th>Valor da venda</th><th>Representante</th><th>Indicador</th><th></th></tr></thead><tbody>
+    ${lista.map(l=>{
+      const rep = l.comissao.representante, ind = l.comissao.indicador;
       return `<tr>
-        <td class="mono">${esc(c.numero)}</td>
-        <td>${esc(c.comprador?.razaoSocial||c.comprador?.nomeFantasia||'—')}</td>
-        <td>${fmtUSD(valorBaseContrato(c))}</td>
+        <td>${l.tipo==='contrato'? `<span class="mono">${esc(l.origem)}</span>` : `<span class="hint">${esc(l.origem)}</span>`}</td>
+        <td>${esc(l.cliente)}</td>
+        <td>${esc(l.data)}</td>
+        <td>${fmtUSD(l.valor)}</td>
         <td>${rep? `${esc(rep.nome||'—')} · ${rep.percentual}% · <b>${fmtUSD(rep.valor)}</b>${rep.formaPagamento? `<br><span class="hint">${esc(rep.formaPagamento)}</span>`:''}` : '<span class="hint">—</span>'}</td>
         <td>${ind? `${esc(ind.nome||'—')} · ${ind.percentual}% · <b>${fmtUSD(ind.valor)}</b>${ind.formaPagamento? `<br><span class="hint">${esc(ind.formaPagamento)}</span>`:''}` : '<span class="hint">—</span>'}</td>
-        <td><button class="btn" data-comedit="${esc(c.numero)}" style="padding:5px 9px;font-size:12px">Editar comissão</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn" data-comedit="${esc(l.chave)}" data-comtipo="${l.tipo}" style="padding:5px 9px;font-size:12px">Editar</button>
+          ${l.tipo==='avulsa'? `<button class="btn danger" data-comdel="${esc(l.chave)}" style="padding:5px 9px;font-size:12px">Excluir</button>` : ''}
+        </td>
       </tr>`;
     }).join('')}
   </tbody></table>`;
-  el.querySelectorAll('[data-comedit]').forEach(b=> b.onclick = ()=> abrirComissaoModal(b.dataset.comedit));
+  el.querySelectorAll('[data-comedit]').forEach(b=> b.onclick = ()=> b.dataset.comtipo==='contrato'? abrirComissaoModal(b.dataset.comedit) : abrirComissaoAvulsaModal(COMISSOES_AVULSAS.find(x=>x.id===b.dataset.comedit)));
+  el.querySelectorAll('[data-comdel]').forEach(b=> b.onclick = ()=> excluirComissaoAvulsa(b.dataset.comdel));
+}
+async function excluirComissaoAvulsa(id){
+  const r = COMISSOES_AVULSAS.find(x=>x.id===id); if(!r) return;
+  openModal(`<h2 style="font-size:17px;margin-bottom:10px">Excluir comissão antiga</h2>
+    <p>Tem certeza que deseja excluir a comissão de <b>${esc(r.cliente||'—')}</b>? Esta ação não pode ser desfeita.</p>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="btnConfirmaExcluirComAvulsa">Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnConfirmaExcluirComAvulsa').onclick = async ()=>{
+    if(db && canWrite){ try{ await db.collection('comissoes_avulsas').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+    COMISSOES_AVULSAS = COMISSOES_AVULSAS.filter(x=>x.id!==id);
+    closeModal(); toast('Comissão excluída.'); renderComissoes(document.getElementById('app'));
+  };
+}
+function abrirComissaoAvulsaModal(registro){
+  const editando = !!registro;
+  const r = registro || { id: uid(), cliente:'', dataVendaISO: todayISO(), dataVendaBR: todayBR(), valorBaseUSD: null, representante:null, indicador:null, observacoes:'' };
+  const rep = r.representante || {nome:'', percentual:'', formaPagamento:''};
+  const ind = r.indicador || {nome:'', percentual:'', formaPagamento:''};
+  openModal(`
+    <h3 style="margin-bottom:4px">${editando? 'Editar comissão antiga' : 'Comissão de venda antiga'}</h3>
+    <p class="hint" style="margin-bottom:14px">Para vendas já realizadas que não têm um Contrato cadastrado no sistema. Informação interna.</p>
+    <form id="formComissaoAvulsa" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>Cliente / descrição da venda *</label><input id="caCliente" value="${esc(r.cliente)}" placeholder="ex.: Indústria XYZ Ltda — injetora GEK 300"></div>
+      <div class="field"><label>Data da venda</label><input id="caData" type="date" value="${esc(r.dataVendaISO||todayISO())}"></div>
+      <div class="field"><label>Valor total da venda (USD)</label><input id="comBase" type="number" step="0.01" value="${r.valorBaseUSD||''}"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Representante (vendedor)</h3>
+      <div class="field"><label>Representante</label>
+        <select id="comRepNome"><option value="">Nenhum</option>${REPRESENTANTES.map(rp=>`<option ${rep.nome===rp?'selected':''}>${esc(rp)}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>% de comissão</label><input id="comRepPct" type="number" step="0.01" min="0" max="100" value="${rep.percentual||''}"></div>
+      <div class="field"><label>Valor devido</label><div id="comRepValor" style="font-size:16px;font-weight:700;color:var(--navy-deep)">${fmtUSD(rep.valor||0)}</div></div>
+      <div class="field"><label>Forma de pagamento</label><input id="comRepForma" value="${esc(rep.formaPagamento)}" placeholder="ex.: conforme recebimento do Serviço Brasil"></div>
+      <h3 style="font-size:13px;color:var(--muted);margin:4px 0 0">Indicador</h3>
+      <div class="field"><label>Nome do indicador</label><input id="comIndNome" value="${esc(ind.nome)}"></div>
+      <div class="field"><label>% de comissão</label><input id="comIndPct" type="number" step="0.01" min="0" max="100" value="${ind.percentual||''}"></div>
+      <div class="field"><label>Valor devido</label><div id="comIndValor" style="font-size:16px;font-weight:700;color:var(--navy-deep)">${fmtUSD(ind.valor||0)}</div></div>
+      <div class="field"><label>Forma de pagamento</label><input id="comIndForma" value="${esc(ind.formaPagamento)}" placeholder="ex.: à vista em até 10 dias após o pagamento do cliente"></div>
+      <div class="field"><label>Observações (opcional)</label><textarea id="caObs" rows="2" placeholder="ex.: venda de 2024, cadastrada agora para controle">${esc(r.observacoes)}</textarea></div>
+    </form>
+    <div id="caErro" class="hint" style="color:var(--danger);display:none;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarComissaoAvulsa">Salvar comissão</button>
+    </div>
+  `);
+  const recalc = ()=>{
+    const baseV = Number(document.getElementById('comBase').value)||0;
+    const repPct = Number(document.getElementById('comRepPct').value)||0;
+    const indPct = Number(document.getElementById('comIndPct').value)||0;
+    document.getElementById('comRepValor').textContent = fmtUSD(baseV * repPct / 100);
+    document.getElementById('comIndValor').textContent = fmtUSD(baseV * indPct / 100);
+  };
+  ['comBase','comRepPct','comIndPct'].forEach(id=> document.getElementById(id).addEventListener('input', recalc));
+  document.getElementById('btnSalvarComissaoAvulsa').onclick = async ()=>{
+    const cliente = document.getElementById('caCliente').value.trim();
+    if(!cliente){ const erro=document.getElementById('caErro'); erro.textContent='Informe o cliente ou uma descrição da venda.'; erro.style.display=''; return; }
+    const dataVendaISO = document.getElementById('caData').value || todayISO();
+    const baseV = Number(document.getElementById('comBase').value)||0;
+    const repNome = document.getElementById('comRepNome').value;
+    const repPct = Number(document.getElementById('comRepPct').value)||0;
+    const repForma = document.getElementById('comRepForma').value.trim();
+    const indNome = document.getElementById('comIndNome').value.trim();
+    const indPct = Number(document.getElementById('comIndPct').value)||0;
+    const indForma = document.getElementById('comIndForma').value.trim();
+    const registro = {
+      id: r.id, cliente, dataVendaISO, dataVendaBR: fmtDiaBR(dataVendaISO),
+      valorBaseUSD: baseV,
+      representante: (repNome||repPct||repForma) ? { nome: repNome, percentual: repPct, valor: baseV*repPct/100, formaPagamento: repForma } : null,
+      indicador: (indNome||indPct||indForma) ? { nome: indNome, percentual: indPct, valor: baseV*indPct/100, formaPagamento: indForma } : null,
+      observacoes: document.getElementById('caObs').value.trim(),
+      criadoEm: editando? r.criadoEm : new Date().toISOString(),
+      atualizadoEm: new Date().toISOString(),
+    };
+    const idx = COMISSOES_AVULSAS.findIndex(x=>x.id===registro.id);
+    if(idx>=0) COMISSOES_AVULSAS[idx] = registro; else COMISSOES_AVULSAS.unshift(registro);
+    if(db && canWrite){ try{ await db.collection('comissoes_avulsas').doc(registro.id).set(registro); }catch(e){ console.error(e); toast('Comissão salva nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Comissão salva.'); renderComissoes(document.getElementById('app'));
+  };
 }
 function abrirComissaoModal(numero){
   const c = CONTRATOS.find(x=>x.numero===numero); if(!c) return;
