@@ -329,11 +329,144 @@ function docIdFromNumero(n){ return (n||'').replace(/[\s\/]+/g,'_'); }
 function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.textContent=msg; document.getElementById('toastRoot').appendChild(t); setTimeout(()=>t.remove(),3400); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+/* ================= ARMAZENAMENTO LOCAL (fallback fora do claude.ai) =================
+   Quando o app roda publicado como artifact do claude.ai, ele usa claude.use('db'),
+   claude.use('assets') e claude.use('downloads'). Fora dali (ex.: site próprio na Vercel)
+   esses recursos não existem, então implementamos aqui versões equivalentes usando
+   IndexedDB do próprio navegador — os dados ficam salvos de verdade neste dispositivo/navegador. */
+const LocalDB = (function(){
+  const DB_NAME = 'goldenmaq_sales_db', DB_VERSION = 1, STORE = 'docs';
+  let dbPromise = null;
+  function openDB(){
+    if(dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve, reject)=>{
+      try{
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = ()=>{
+          const idb = req.result;
+          if(!idb.objectStoreNames.contains(STORE)){
+            const store = idb.createObjectStore(STORE, {keyPath:'path'});
+            store.createIndex('collection', 'collection', {unique:false});
+          }
+        };
+        req.onsuccess = ()=> resolve(req.result);
+        req.onerror = ()=> reject(req.error);
+      }catch(e){ reject(e); }
+    });
+    return dbPromise;
+  }
+  const bc = (function(){ try{ return new BroadcastChannel('goldenmaq_db_sync'); }catch(e){ return null; } })();
+  const listeners = {}; // collectionPath -> Set(cb)
+  function notify(collectionPath){
+    const set = listeners[collectionPath];
+    if(set) set.forEach(cb=> refreshListener(collectionPath, cb));
+    if(bc){ try{ bc.postMessage({type:'changed', collection: collectionPath}); }catch(e){} }
+  }
+  if(bc) bc.onmessage = (ev)=>{ if(ev.data && ev.data.type==='changed'){ const set = listeners[ev.data.collection]; if(set) set.forEach(cb=> refreshListener(ev.data.collection, cb)); } };
+  async function getAllInCollection(collectionPath){
+    const idb = await openDB();
+    return new Promise((resolve, reject)=>{
+      const tx = idb.transaction(STORE, 'readonly');
+      const idx = tx.objectStore(STORE).index('collection');
+      const req = idx.getAll(IDBKeyRange.only(collectionPath));
+      req.onsuccess = ()=> resolve(req.result||[]);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+  async function refreshListener(collectionPath, cb){
+    try{
+      const rows = await getAllInCollection(collectionPath);
+      cb({ docs: rows.map(r=>({ id:r.id, data:()=> r.data })) });
+    }catch(e){ console.error('LocalDB snapshot', e); }
+  }
+  async function putDoc(collectionPath, id, data){
+    const idb = await openDB();
+    await new Promise((resolve, reject)=>{
+      const tx = idb.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put({ path: collectionPath+'/'+id, collection: collectionPath, id, data });
+      tx.oncomplete = resolve; tx.onerror = ()=> reject(tx.error);
+    });
+    notify(collectionPath);
+  }
+  async function getDocRow(collectionPath, id){
+    const idb = await openDB();
+    return new Promise((resolve, reject)=>{
+      const tx = idb.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(collectionPath+'/'+id);
+      req.onsuccess = ()=> resolve(req.result||null);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+  async function deleteDoc(collectionPath, id){
+    const idb = await openDB();
+    await new Promise((resolve, reject)=>{
+      const tx = idb.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(collectionPath+'/'+id);
+      tx.oncomplete = resolve; tx.onerror = ()=> reject(tx.error);
+    });
+    notify(collectionPath);
+  }
+  async function updateDoc(collectionPath, id, partial){
+    const existing = await getDocRow(collectionPath, id);
+    const merged = Object.assign({}, existing? existing.data : {}, partial);
+    await putDoc(collectionPath, id, merged);
+  }
+  function collection(path){
+    const api = {
+      limit(){ return api; }, // IndexedDB local — coleções já ficam pequenas, limite não é necessário
+      async get(){
+        const rows = await getAllInCollection(path);
+        return { docs: rows.map(r=>({ id:r.id, data:()=> r.data })) };
+      },
+      onSnapshot(cb, errCb){
+        if(!listeners[path]) listeners[path] = new Set();
+        listeners[path].add(cb);
+        refreshListener(path, cb).catch(e=>{ if(errCb) errCb(e); });
+        return ()=>{ const set = listeners[path]; if(set) set.delete(cb); };
+      },
+      doc(id){
+        return {
+          async get(){ const row = await getDocRow(path, id); return { exists: !!row, id, data:()=> row? row.data : undefined }; },
+          async set(data){ await putDoc(path, id, data); },
+          async update(partial){ await updateDoc(path, id, partial); },
+          async delete(){ await deleteDoc(path, id); },
+        };
+      }
+    };
+    return api;
+  }
+  return { collection };
+})();
+const LocalAssets = {
+  async upload(file){
+    const dataUrl = await new Promise((resolve, reject)=>{
+      const fr = new FileReader();
+      fr.onload = ()=> resolve(fr.result);
+      fr.onerror = ()=> reject(fr.error);
+      fr.readAsDataURL(file);
+    });
+    return { id: 'local_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8), url: dataUrl, contentType: file.type, sizeBytes: file.size };
+  }
+};
+const LocalDownloads = {
+  async save({filename, data}){
+    const blob = new Blob([data], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename || 'documento.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 4000);
+  }
+};
+function temClaudeRuntime(){ return typeof claude !== 'undefined' && claude && typeof claude.use === 'function'; }
+
 /* ---------- boot ---------- */
 async function boot(){
-  try{ db = await claude.use('db'); }catch(e){ db = null; }
-  try{ userCap = await claude.use('user'); }catch(e){ userCap = null; }
-  try{ assetsCap = await claude.use('assets'); }catch(e){ assetsCap = null; }
+  try{ db = temClaudeRuntime()? await claude.use('db') : null; }catch(e){ db = null; }
+  if(!db) db = LocalDB;
+  try{ userCap = temClaudeRuntime()? await claude.use('user') : null; }catch(e){ userCap = null; }
+  try{ assetsCap = temClaudeRuntime()? await claude.use('assets') : null; }catch(e){ assetsCap = null; }
+  if(!assetsCap) assetsCap = LocalAssets;
   if(userCap){
     try{ canWrite = !!(await userCap.can('data.write')); }catch(e){ canWrite = true; }
     try{ MEU_USER_ID = await userCap.id(); }catch(e){ MEU_USER_ID = null; }
@@ -1982,7 +2115,7 @@ async function salvarPropostaRegistro(extra){
   draft = null; location.hash = 'propostas';
 }
 async function baixarDocumentoHtml(){
-  const dl = await (async ()=>{ try{ return await claude.use('downloads'); }catch(e){ return null; } })();
+  const dl = await (async ()=>{ try{ return temClaudeRuntime()? await claude.use('downloads') : LocalDownloads; }catch(e){ return LocalDownloads; } })();
   const htmlDoc = document.getElementById('docPreview').outerHTML;
   const printBar = `<div class="print-bar" style="position:sticky;top:0;z-index:9;background:#1a2f4a;padding:10px;text-align:center;margin-bottom:14px">
     <button onclick="window.print()" style="background:#c9a227;color:#241b00;border:none;border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">🖨️ Imprimir / Salvar como PDF</button>
