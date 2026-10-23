@@ -214,10 +214,35 @@
     .mobilenav a{flex:none;color:#cdd8e8;font-size:12.5px;padding:6px 11px;border-radius:99px;text-decoration:none;background:rgba(255,255,255,.08)}
     .mobilenav a.active{background:var(--gold);color:#241b00;font-weight:700}
   }
+  .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy-deep);padding:20px}
+  .login-card{background:var(--surface);border-radius:12px;padding:34px 30px;max-width:360px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+  .login-card img{width:52px;height:52px;object-fit:contain;display:block;margin:0 auto 14px}
+  .login-card h1{font-size:20px;text-align:center;color:var(--navy);margin-bottom:4px}
+  :root[data-theme="dark"] .login-card h1{color:#fff}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .login-card h1{color:#fff}}
+  .login-card .hint{text-align:center;margin-bottom:18px;display:block}
+  .login-card form{display:flex;flex-direction:column;gap:12px}
+  .side-foot{margin-top:auto;padding:14px 18px 4px;border-top:1px solid rgba(255,255,255,.12)}
+  .side-foot .side-user{font-size:12.5px;color:#c7d2e0;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .side-foot button{color:#c7d2e0;width:100%;justify-content:flex-start;padding:7px 0;background:transparent;border:none;font-size:13px}
+  .side-foot button:hover{color:#fff}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 
-<div class="shell">
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <img src="/_blob/ef45acc1947a026df60d8e8714225a4a" alt="Goldenmaq" onerror="this.style.display='none'">
+    <h1>Goldenmaq Sales</h1>
+    <span class="hint">Acesso restrito — entre com seu e-mail e senha.</span>
+    <form id="loginForm">
+      <div class="field"><label>E-mail</label><input type="email" id="loginEmail" autocomplete="username" required></div>
+      <div class="field"><label>Senha</label><input type="password" id="loginSenha" autocomplete="current-password" required></div>
+      <div id="loginErro" class="hint" style="color:var(--danger);display:none"></div>
+      <button type="submit" class="btn primary" style="width:100%;justify-content:center;margin-top:6px">Entrar</button>
+    </form>
+  </div>
+</div>
+<div class="shell" id="appShell" style="display:none">
   <nav class="side" id="sideNav">
     <div class="brand">
       <img id="logoImg" src="/_blob/ef45acc1947a026df60d8e8714225a4a" alt="Goldenmaq" onerror="this.style.display='none'">
@@ -234,6 +259,12 @@
     <a class="navlink" data-view="ocs" href="#ocs"><span class="dot"></span>Ordem de Compra</a>
     <a class="navlink" data-view="tarefas" href="#tarefas"><span class="dot"></span>Calendário</a>
     <a class="navlink" data-view="mensagens" href="#mensagens"><span class="dot"></span>Mensagens</a>
+    <a class="navlink" data-view="usuarios" id="navUsuarios" href="#usuarios"><span class="dot"></span>Usuários</a>
+    <div class="side-foot">
+      <div class="side-user" id="sideUserName"></div>
+      <button type="button" id="btnTrocarSenha">Trocar senha</button>
+      <button type="button" id="btnSair">Sair</button>
+    </div>
   </nav>
   <div class="main">
     <div class="topbar"><b>Goldenmaq Sales</b><span id="topbarView" style="font-size:12px;color:var(--gold-soft)"></span></div>
@@ -259,6 +290,7 @@ const NAV = [
   {id:'ocs', label:'Ordem de Compra'},
   {id:'tarefas', label:'Calendário'},
   {id:'mensagens', label:'Mensagens'},
+  {id:'usuarios', label:'Usuários'},
 ];
 document.getElementById('mobileNav').innerHTML = NAV.map(n=>`<a href="#${n.id}" data-view="${n.id}">${n.label}</a>`).join('');
 
@@ -490,8 +522,126 @@ const LocalDownloads = {
 };
 function temClaudeRuntime(){ return typeof claude !== 'undefined' && claude && typeof claude.use === 'function'; }
 
+/* ================= AUTENTICAÇÃO ================= */
+let CURRENT_USER = null;
+
+async function apiCall(path, opts){
+  opts = opts || {};
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: opts.body ? {'content-type':'application/json'} : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    credentials: 'same-origin',
+  });
+  let data = {};
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok){ const err = new Error(data.error || ('Erro '+res.status)); err.status = res.status; throw err; }
+  return data;
+}
+function apiAuth(action, opts){ return apiCall(`/api/auth?action=${action}`, opts); }
+
+function temPermissao(viewId){
+  if(!CURRENT_USER) return false;
+  if(CURRENT_USER.isMaster) return true;
+  if(viewId==='usuarios') return false; // só a conta mestre gerencia usuários
+  return (CURRENT_USER.sections||[]).includes(viewId);
+}
+function aplicarPermissoesNav(){
+  document.querySelectorAll('#sideNav a[data-view]').forEach(a=>{ a.style.display = temPermissao(a.dataset.view) ? '' : 'none'; });
+  document.querySelectorAll('#mobileNav a[data-view]').forEach(a=>{ a.style.display = temPermissao(a.dataset.view) ? '' : 'none'; });
+  const nomeEl = document.getElementById('sideUserName');
+  if(nomeEl && CURRENT_USER) nomeEl.textContent = (CURRENT_USER.name || CURRENT_USER.email) + (CURRENT_USER.isMaster? ' · Mestre' : '');
+}
+function mostrarLogin(){
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appShell').style.display = 'none';
+  const campoSenha = document.getElementById('loginSenha');
+  if(campoSenha) campoSenha.value = '';
+  setTimeout(()=>{ const el = document.getElementById('loginEmail'); if(el) el.focus(); }, 50);
+}
+function mostrarApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').style.display = 'flex';
+  aplicarPermissoesNav();
+}
+function wireLoginForm(){
+  document.getElementById('loginForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value.trim();
+    const senha = document.getElementById('loginSenha').value;
+    const erroEl = document.getElementById('loginErro');
+    erroEl.style.display = 'none';
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Entrando...';
+    try{
+      const data = await apiAuth('login', {method:'POST', body:{email, password:senha}});
+      CURRENT_USER = data.user;
+      mostrarApp();
+      await iniciarApp();
+    }catch(err){
+      erroEl.textContent = err.message || 'Não foi possível entrar.';
+      erroEl.style.display = 'block';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Entrar';
+    }
+  });
+  document.getElementById('btnSair').addEventListener('click', async ()=>{
+    try{ await apiAuth('logout', {method:'POST'}); }catch(e){}
+    location.reload();
+  });
+  document.getElementById('btnTrocarSenha').addEventListener('click', abrirModalTrocarSenha);
+}
+function abrirModalTrocarSenha(){
+  openModal(`
+    <h3 style="margin-bottom:14px">Trocar senha</h3>
+    <form id="formSenha" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>Senha atual</label><input id="spAtual" type="password" required></div>
+      <div class="field"><label>Nova senha</label><input id="spNova" type="password" required placeholder="mín. 6 caracteres"></div>
+      <div class="field"><label>Confirmar nova senha</label><input id="spConfirma" type="password" required></div>
+      <div id="spErro" class="hint" style="color:var(--danger);display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+        <button type="button" class="btn ghost" id="spCancelar">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>`);
+  document.getElementById('spCancelar').onclick = closeModal;
+  document.getElementById('formSenha').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const erroEl = document.getElementById('spErro'); erroEl.style.display = 'none';
+    const nova = document.getElementById('spNova').value;
+    const confirma = document.getElementById('spConfirma').value;
+    if(nova !== confirma){ erroEl.textContent = 'As senhas não coincidem.'; erroEl.style.display = 'block'; return; }
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try{
+      await apiAuth('change-password', {method:'POST', body:{ currentPassword: document.getElementById('spAtual').value, newPassword: nova }});
+      closeModal();
+      toast('Senha alterada.');
+    }catch(err){
+      erroEl.textContent = err.message || 'Não foi possível trocar a senha.';
+      erroEl.style.display = 'block';
+    }finally{ btn.disabled = false; }
+  });
+}
+async function checkSession(){
+  try{
+    const data = await apiAuth('me');
+    CURRENT_USER = data.user;
+    mostrarApp();
+    return true;
+  }catch(e){
+    mostrarLogin();
+    return false;
+  }
+}
+
 /* ---------- boot ---------- */
 async function boot(){
+  wireLoginForm();
+  const ok = await checkSession();
+  if(ok) await iniciarApp();
+}
+async function iniciarApp(){
   try{ db = temClaudeRuntime()? await claude.use('db') : null; }catch(e){ db = null; }
   if(!db) db = LocalDB;
   try{ userCap = temClaudeRuntime()? await claude.use('user') : null; }catch(e){ userCap = null; }
@@ -504,7 +654,9 @@ async function boot(){
       if(MEU_USER_ID){ const ps = await userCap.profiles([MEU_USER_ID]); MEU_NOME = (ps[MEU_USER_ID] && ps[MEU_USER_ID].name) || ''; }
     }catch(e){ MEU_NOME = ''; }
   } else { canWrite = true; }
+  if(!MEU_NOME && CURRENT_USER) MEU_NOME = CURRENT_USER.name || CURRENT_USER.email;
   wireNav();
+  aplicarPermissoesNav();
   renderShellForRoute();
   if(db){
     loadCollections().catch(err=>console.error('load error', err));
@@ -589,14 +741,23 @@ function wireNav(){
 }
 function currentView(){
   const h = location.hash.slice(1) || 'dashboard';
-  return NAV.some(n=>n.id===h) ? h : 'dashboard';
+  const alvo = NAV.some(n=>n.id===h) ? h : 'dashboard';
+  if(temPermissao(alvo)) return alvo;
+  const permitido = NAV.find(n=> temPermissao(n.id));
+  return permitido ? permitido.id : null;
 }
 function renderShellForRoute(){
   const view = currentView();
   document.querySelectorAll('.navlink').forEach(a=> a.classList.toggle('active', a.dataset.view===view));
   document.querySelectorAll('#mobileNav a').forEach(a=> a.classList.toggle('active', a.dataset.view===view));
-  document.getElementById('topbarView').textContent = NAV.find(n=>n.id===view).label;
   const app = document.getElementById('app');
+  if(!view){
+    document.getElementById('topbarView').textContent = '';
+    app.innerHTML = '<div class="empty"><b>Sem permissão de acesso</b>Fale com o administrador para liberar alguma seção para o seu usuário.</div>';
+    return;
+  }
+  document.getElementById('topbarView').textContent = (NAV.find(n=>n.id===view)||{}).label || '';
+  if(view==='usuarios') return renderUsuarios(app);
   if(view==='dashboard') return renderDashboard(app);
   if(view==='nova') return renderNovaProposta(app);
   if(view==='propostas') return renderPropostas(app);
@@ -1097,6 +1258,117 @@ function paintTabelaPrecos(){
   }).join('');
 }
 function fmtCifrao(v){ if(v==null||isNaN(v)) return '—'; return '$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+/* ================= USUÁRIOS (só conta mestre) ================= */
+let usuariosCache = [];
+async function renderUsuarios(app){
+  app.innerHTML = `
+    <div class="pagehead"><h1>Usuários</h1><span class="hint">Acesso e permissões por seção — só a conta mestre vê esta página</span></div>
+    <div class="card pad" style="margin-bottom:14px">
+      <button class="btn primary" id="btnNovoUsuario">+ Novo usuário</button>
+    </div>
+    <div class="card" id="usuariosLista"><div class="empty">Carregando...</div></div>`;
+  document.getElementById('btnNovoUsuario').onclick = ()=> abrirModalUsuario(null);
+  try{
+    const data = await apiCall('/api/admin-users', {method:'GET'});
+    usuariosCache = data.users || [];
+    pintarUsuarios();
+  }catch(e){
+    document.getElementById('usuariosLista').innerHTML = `<div class="empty"><b>Não foi possível carregar</b>${esc(e.message||'')}</div>`;
+  }
+}
+function pintarUsuarios(){
+  const el = document.getElementById('usuariosLista');
+  if(!el) return;
+  if(!usuariosCache.length){ el.innerHTML = '<div class="empty">Nenhum usuário.</div>'; return; }
+  el.innerHTML = usuariosCache.map(u=>`
+    <div class="client-row">
+      <div>
+        <b>${esc(u.name||u.email)}</b> ${u.isMaster?'<span class="pill ok">Mestre</span>':''} ${u.active===false?'<span class="pill danger">Inativo</span>':''}
+        <small>${esc(u.email)}${!u.isMaster? ' · '+((u.sections||[]).map(s=> (NAV.find(n=>n.id===s)||{}).label || s).join(', ') || 'sem seções liberadas') : ''}</small>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost" data-editar="${esc(u.id)}">Editar</button>
+        ${CURRENT_USER && u.id!==CURRENT_USER.id ? `<button class="btn ghost danger" data-excluir="${esc(u.id)}">Excluir</button>` : ''}
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-editar]').forEach(b=> b.onclick = ()=> abrirModalUsuario(usuariosCache.find(u=>u.id===b.dataset.editar)));
+  el.querySelectorAll('[data-excluir]').forEach(b=> b.onclick = ()=> excluirUsuario(b.dataset.excluir));
+}
+function abrirModalUsuario(usuario){
+  const editando = !!usuario;
+  const secoes = NAV.filter(n=> n.id!=='usuarios');
+  openModal(`
+    <h3 style="margin-bottom:14px">${editando? 'Editar usuário' : 'Novo usuário'}</h3>
+    <form id="formUsuario" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label>Nome</label><input id="uNome" value="${editando? esc(usuario.name):''}" required></div>
+      <div class="field"><label>E-mail</label><input id="uEmail" type="email" value="${editando? esc(usuario.email):''}" ${editando?'disabled':''} required></div>
+      <div class="field"><label>${editando? 'Nova senha (deixe em branco para manter)':'Senha'}</label><input id="uSenha" type="password" placeholder="mín. 6 caracteres"></div>
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:600"><input type="checkbox" id="uMestre" style="width:auto" ${editando&&usuario.isMaster?'checked':''}> Conta mestre (acesso total, inclusive este painel)</label>
+      <div class="field" id="uSecoesWrap">
+        <label>Seções permitidas</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${secoes.map(n=>`<label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;font-weight:400"><input type="checkbox" class="uSecao" value="${n.id}" style="width:auto" ${editando && (usuario.sections||[]).includes(n.id)?'checked':''}> ${esc(n.label)}</label>`).join('')}
+        </div>
+      </div>
+      ${editando? `<label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;font-weight:600"><input type="checkbox" id="uAtivo" style="width:auto" ${usuario.active!==false?'checked':''}> Usuário ativo</label>` : ''}
+      <div id="uErro" class="hint" style="color:var(--danger);display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+        <button type="button" class="btn ghost" id="uCancelar">Cancelar</button>
+        <button type="submit" class="btn primary">${editando? 'Salvar':'Criar usuário'}</button>
+      </div>
+    </form>`);
+  const mestreChk = document.getElementById('uMestre');
+  const secoesWrap = document.getElementById('uSecoesWrap');
+  function atualizarVisibSecoes(){ secoesWrap.style.display = mestreChk.checked? 'none':'block'; }
+  atualizarVisibSecoes();
+  mestreChk.addEventListener('change', atualizarVisibSecoes);
+  document.getElementById('uCancelar').onclick = closeModal;
+  document.getElementById('formUsuario').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const erroEl = document.getElementById('uErro'); erroEl.style.display = 'none';
+    const senha = document.getElementById('uSenha').value;
+    const payload = {
+      name: document.getElementById('uNome').value.trim(),
+      isMaster: mestreChk.checked,
+      sections: Array.from(document.querySelectorAll('.uSecao:checked')).map(c=>c.value),
+    };
+    if(senha) payload.password = senha;
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try{
+      if(editando){
+        payload.id = usuario.id;
+        payload.active = document.getElementById('uAtivo').checked;
+        const r = await apiCall('/api/admin-users', {method:'PUT', body:payload});
+        const idx = usuariosCache.findIndex(u=>u.id===usuario.id);
+        if(idx>=0) usuariosCache[idx] = r.user;
+      } else {
+        payload.email = document.getElementById('uEmail').value.trim();
+        if(!senha || senha.length<6){ erroEl.textContent='Informe uma senha com ao menos 6 caracteres.'; erroEl.style.display='block'; btn.disabled=false; return; }
+        const r = await apiCall('/api/admin-users', {method:'POST', body:payload});
+        usuariosCache.push(r.user);
+      }
+      closeModal();
+      pintarUsuarios();
+      toast(editando? 'Usuário atualizado.':'Usuário criado.');
+    }catch(err){
+      erroEl.textContent = err.message || 'Não foi possível salvar.';
+      erroEl.style.display = 'block';
+    }finally{
+      btn.disabled = false;
+    }
+  });
+}
+function excluirUsuario(id){
+  const u = usuariosCache.find(x=>x.id===id);
+  if(!u) return;
+  if(!confirm(`Remover o acesso de ${u.name||u.email}?`)) return;
+  apiCall('/api/admin-users?id='+encodeURIComponent(id), {method:'DELETE'})
+    .then(()=>{ usuariosCache = usuariosCache.filter(x=>x.id!==id); pintarUsuarios(); toast('Usuário removido.'); })
+    .catch(err=> toast(err.message||'Não foi possível remover.'));
+}
+
 function filteredCatalogo(){
   const t = catFiltro.termo.trim().toUpperCase();
   return CATALOGO.filter(c=>{
