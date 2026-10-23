@@ -105,6 +105,16 @@
   .searchbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
   .searchbar input{flex:1;min-width:200px}
   .catgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-head{margin-bottom:4px}
+  .cal-head div{font-size:11px;color:var(--muted);text-transform:uppercase;text-align:center}
+  .cal-cel{position:relative;aspect-ratio:1;border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:12.5px;gap:3px}
+  .cal-cel:hover{border-color:var(--navy)}
+  .cal-cel.vazio{border-color:transparent;cursor:default}
+  .cal-cel.hoje{border-color:var(--gold);font-weight:700}
+  .cal-cel.sel{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .cal-dot{width:6px;height:6px;border-radius:50%;background:var(--gold)}
+  .cal-dot.atrasada{background:var(--danger)}
   .machine-card{border:1px solid var(--border);border-radius:9px;padding:14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
   .machine-card h4{font-size:15px;color:var(--navy)}
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .machine-card h4{color:var(--gold-soft)}}
@@ -209,6 +219,7 @@
     <a class="navlink" data-view="contratos" href="#contratos"><span class="dot"></span>Contratos</a>
     <a class="navlink" data-view="atas" href="#atas"><span class="dot"></span>Ata de Visita</a>
     <a class="navlink" data-view="ocs" href="#ocs"><span class="dot"></span>Ordem de Compra</a>
+    <a class="navlink" data-view="tarefas" href="#tarefas"><span class="dot"></span>Calendário</a>
     <a class="navlink" data-view="mensagens" href="#mensagens"><span class="dot"></span>Mensagens</a>
   </nav>
   <div class="main">
@@ -232,6 +243,7 @@ const NAV = [
   {id:'contratos', label:'Contratos'},
   {id:'atas', label:'Ata de Visita'},
   {id:'ocs', label:'Ordem de Compra'},
+  {id:'tarefas', label:'Calendário'},
   {id:'mensagens', label:'Mensagens'},
 ];
 document.getElementById('mobileNav').innerHTML = NAV.map(n=>`<a href="#${n.id}" data-view="${n.id}">${n.label}</a>`).join('');
@@ -253,6 +265,10 @@ let unsubAtas = null;
 let OCS = [];
 let ocDraft = null;
 let unsubOCs = null;
+let TAREFAS = [];
+let unsubTarefas = null;
+let tarefaCalRef = new Date(); // mês/ano exibido no calendário
+let tarefaDiaFiltro = null;    // 'YYYY-MM-DD' quando um dia específico está selecionado
 let THREADS = {};      // mensagens/{threadKey} -> {estagio, ultimaMsg, lidoPor}
 let unsubThreads = null;
 let assetsCap = null;
@@ -496,6 +512,7 @@ async function loadCollections(){
   subscribeAtas();
   subscribeOCs();
   subscribeThreads();
+  subscribeTarefas();
   renderShellForRoute();
 }
 function subscribeThreads(){
@@ -537,6 +554,14 @@ function subscribeOCs(){
     if(location.hash.slice(1)==='ocs' && !ocDraft) renderShellForRoute();
   }, err=>{ console.error('ocs snapshot', err); });
 }
+function subscribeTarefas(){
+  if(unsubTarefas) unsubTarefas();
+  unsubTarefas = db.collection('tarefas').limit(1000).onSnapshot(snap=>{
+    TAREFAS = snap.docs.map(d=>d.data()).sort((a,b)=> (a.dataISO||'').localeCompare(b.dataISO||'') || (a.hora||'').localeCompare(b.hora||''));
+    const v = location.hash.slice(1);
+    if(v==='tarefas' || v==='dashboard' || v==='') renderShellForRoute();
+  }, err=>{ console.error('tarefas snapshot', err); });
+}
 
 /* ---------- nav / routing ---------- */
 function wireNav(){
@@ -566,6 +591,7 @@ function renderShellForRoute(){
   if(view==='contratos') return renderContratos(app);
   if(view==='atas') return renderAtas(app);
   if(view==='ocs') return renderOCs(app);
+  if(view==='tarefas') return renderTarefas(app);
   if(view==='mensagens') return renderMensagens(app);
 }
 
@@ -694,6 +720,7 @@ function renderDashboard(app){
   PROPOSTAS.forEach(p=> (p.itens||[]).forEach(it=>{ porLinha[it.linha||it.categoria||'Outros'] = (porLinha[it.linha||it.categoria||'Outros']||0)+1; }));
   const linhasOrdenadas = Object.entries(porLinha).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const recentes = PROPOSTAS.slice(0,6);
+  const proxLembretes = TAREFAS.filter(t=> !t.concluida).slice(0,5);
   app.innerHTML = `
     <div class="pagehead"><h1>Dashboard Comercial</h1><a href="#nova" class="btn primary">+ Nova proposta</a></div>
     <div class="grid cols-4" style="margin-bottom:18px">
@@ -721,6 +748,14 @@ function renderDashboard(app){
             <div><b>${esc(p.numero)}</b> — ${esc(p.cliente?.nome_fantasia||'—')}<br><span class="hint">${(p.itens||[]).length} item(ns) · ${fmtUSD(p.valorTotalUSD)}</span></div>
             <span class="pill ${statusClass(p.status)}">${esc(p.status)}</span>
           </div>`).join('') : `<div class="empty"><b>Nenhuma proposta ainda</b>Comece pela base instalada: ~3.000 máquinas já compradas pelos seus clientes são o funil de peças mais barato que você tem.</div>`}
+      </div>
+      <div class="card pad">
+        <h3 style="font-size:14px;margin-bottom:12px;color:var(--muted)">Próximos lembretes</h3>
+        ${proxLembretes.length? proxLembretes.map(t=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <div><b>${esc(t.titulo)}</b><br><span class="hint">${fmtDiaBR(t.dataISO)}${t.hora? ' às '+esc(t.hora):''}${t.categoria? ' · '+esc(t.categoria):''}</span></div>
+            ${tarefaAtrasada(t)? `<span class="pill danger">Atrasada</span>` : (tarefaHoje(t)? `<span class="pill warn">Hoje</span>`:'')}
+          </div>`).join('') : `<div class="empty"><b>Nenhum lembrete</b><a href="#tarefas" style="color:var(--gold)">Criar um lembrete</a></div>`}
       </div>
     </div>`;
 }
@@ -1341,6 +1376,132 @@ function openModal(innerHtml, extraClass){
   document.getElementById('mb').addEventListener('click', e=>{ if(e.target.id==='mb') closeModal(); });
 }
 function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+/* ================= CALENDÁRIO / TAREFAS (lembretes) ================= */
+const CATEGORIAS_TAREFA = ['Ligação','Reunião','Visita','Entrega','Pagamento','Follow-up','Outro'];
+function fmtDiaBR(iso){ if(!iso) return ''; const p = iso.split('-'); return p.length===3? `${p[2]}/${p[1]}/${p[0]}` : iso; }
+function tarefaAtrasada(t){ return !t.concluida && t.dataISO && t.dataISO < todayISO(); }
+function tarefaHoje(t){ return !!t.dataISO && t.dataISO === todayISO(); }
+function renderTarefas(app){
+  app.innerHTML = `
+    <div class="pagehead"><h1>Calendário e Tarefas</h1><button class="btn primary" id="btnNovoLembrete">+ Novo lembrete</button></div>
+    <div class="grid cols-2" style="align-items:start">
+      <div class="card pad" id="calBox"></div>
+      <div class="card pad" id="tarefaListaBox"></div>
+    </div>`;
+  document.getElementById('btnNovoLembrete').onclick = ()=> abrirNovoLembreteModal(tarefaDiaFiltro || todayISO());
+  paintCalendario();
+  paintListaTarefas();
+}
+function paintCalendario(){
+  const box = document.getElementById('calBox'); if(!box) return;
+  const ref = tarefaCalRef;
+  const ano = ref.getFullYear(), mes = ref.getMonth();
+  const primeiroDia = new Date(ano, mes, 1);
+  const ultimoDia = new Date(ano, mes+1, 0);
+  const offset = primeiroDia.getDay();
+  const totalDias = ultimoDia.getDate();
+  const porDia = {};
+  TAREFAS.forEach(t=>{ if(!t.dataISO) return; (porDia[t.dataISO] = porDia[t.dataISO]||[]).push(t); });
+  const nomeMes = ref.toLocaleDateString('pt-BR', {month:'long', year:'numeric'});
+  let celulas = '';
+  for(let i=0;i<offset;i++) celulas += `<div class="cal-cel vazio"></div>`;
+  for(let dia=1; dia<=totalDias; dia++){
+    const iso = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+    const tarefasDia = porDia[iso]||[];
+    const temAtrasada = tarefasDia.some(tarefaAtrasada);
+    const ehHoje = iso===todayISO();
+    const selecionado = iso===tarefaDiaFiltro;
+    celulas += `<div class="cal-cel ${ehHoje?'hoje':''} ${selecionado?'sel':''}" data-dia="${iso}" title="${tarefasDia.length} lembrete(s)">
+      <span class="cal-num">${dia}</span>
+      ${tarefasDia.length? `<span class="cal-dot ${temAtrasada?'atrasada':''}"></span>` : ''}
+    </div>`;
+  }
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <button class="btn ghost" id="calPrev">‹</button>
+      <b style="text-transform:capitalize">${esc(nomeMes)}</b>
+      <button class="btn ghost" id="calNext">›</button>
+    </div>
+    <div class="cal-grid cal-head">${['D','S','T','Q','Q','S','S'].map(d=>`<div>${d}</div>`).join('')}</div>
+    <div class="cal-grid">${celulas}</div>
+    ${tarefaDiaFiltro? `<div style="margin-top:10px"><button class="btn ghost" id="calLimpar">✕ Limpar filtro de dia (${fmtDiaBR(tarefaDiaFiltro)})</button></div>` : ''}`;
+  document.getElementById('calPrev').onclick = ()=>{ tarefaCalRef = new Date(ano, mes-1, 1); paintCalendario(); };
+  document.getElementById('calNext').onclick = ()=>{ tarefaCalRef = new Date(ano, mes+1, 1); paintCalendario(); };
+  box.querySelectorAll('[data-dia]').forEach(el=> el.onclick = ()=>{
+    const d = el.dataset.dia;
+    tarefaDiaFiltro = (tarefaDiaFiltro===d)? null : d;
+    paintCalendario(); paintListaTarefas();
+  });
+  const limpar = document.getElementById('calLimpar'); if(limpar) limpar.onclick = ()=>{ tarefaDiaFiltro=null; paintCalendario(); paintListaTarefas(); };
+}
+function paintListaTarefas(){
+  const box = document.getElementById('tarefaListaBox'); if(!box) return;
+  let lista = TAREFAS.slice();
+  if(tarefaDiaFiltro) lista = lista.filter(t=> t.dataISO===tarefaDiaFiltro);
+  lista = lista.filter(t=> !t.concluida).concat(lista.filter(t=> t.concluida));
+  box.innerHTML = `<h3 style="font-size:14px;margin-bottom:10px;color:var(--muted)">${tarefaDiaFiltro? 'Lembretes em '+fmtDiaBR(tarefaDiaFiltro) : 'Todos os lembretes'}</h3>` +
+    (lista.length? lista.map(t=>`
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+        <input type="checkbox" data-tconc="${esc(t.id)}" ${t.concluida?'checked':''} style="margin-top:3px">
+        <div style="flex:1;min-width:0">
+          <div style="${t.concluida?'text-decoration:line-through;color:var(--muted)':''}"><b>${esc(t.titulo)}</b>
+            ${tarefaAtrasada(t)? `<span class="pill danger" style="margin-left:6px">Atrasada</span>` : (tarefaHoje(t) && !t.concluida? `<span class="pill warn" style="margin-left:6px">Hoje</span>`:'')}
+          </div>
+          <small class="hint">${fmtDiaBR(t.dataISO)}${t.hora? ' às '+esc(t.hora):''}${t.categoria? ' · '+esc(t.categoria):''}${t.relacionado? ' · '+esc(t.relacionado):''}</small>
+        </div>
+        <button class="btn ghost" data-tdel="${esc(t.id)}" title="Excluir">🗑️</button>
+      </div>`).join('') : `<div class="empty"><b>Nenhum lembrete</b>${tarefaDiaFiltro? 'Nenhum lembrete neste dia.' : 'Clique em "+ Novo lembrete" para criar o primeiro.'}</div>`);
+  box.querySelectorAll('[data-tconc]').forEach(cb=> cb.onchange = ()=> toggleTarefaConcluida(cb.dataset.tconc, cb.checked));
+  box.querySelectorAll('[data-tdel]').forEach(b=> b.onclick = ()=> excluirTarefa(b.dataset.tdel));
+}
+async function toggleTarefaConcluida(id, concluida){
+  const t = TAREFAS.find(x=>x.id===id); if(!t) return;
+  t.concluida = concluida; t.atualizadoEm = new Date().toISOString();
+  if(db && canWrite){ try{ await db.collection('tarefas').doc(id).update({concluida, atualizadoEm:t.atualizadoEm}); }catch(e){ console.error(e); toast('Não foi possível atualizar no banco.'); } }
+  paintListaTarefas(); paintCalendario();
+}
+async function excluirTarefa(id){
+  if(!confirm('Excluir este lembrete?')) return;
+  TAREFAS = TAREFAS.filter(t=>t.id!==id);
+  if(db && canWrite){ try{ await db.collection('tarefas').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+  paintListaTarefas(); paintCalendario();
+}
+function abrirNovoLembreteModal(dataInicial){
+  openModal(`
+    <h2 style="font-size:17px;margin-bottom:12px">Novo lembrete</h2>
+    <div class="grid cols-2" style="gap:10px">
+      <div class="field" style="grid-column:1/-1"><label>Título *</label><input id="nlTitulo" placeholder="Ex.: Ligar para cliente X"></div>
+      <div class="field"><label>Data *</label><input id="nlData" type="date" value="${esc(dataInicial||todayISO())}"></div>
+      <div class="field"><label>Hora (opcional)</label><input id="nlHora" type="time"></div>
+      <div class="field"><label>Categoria</label><select id="nlCategoria">${CATEGORIAS_TAREFA.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
+      <div class="field"><label>Relacionado (opcional)</label><input id="nlRelacionado" list="nlClientesList" placeholder="Cliente, proposta..."></div>
+    </div>
+    <datalist id="nlClientesList">${CLIENTES.map(c=>`<option value="${esc(c.nome_fantasia||c.razao_social)}">`).join('')}</datalist>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarLembrete">Salvar lembrete</button>
+    </div>`);
+  document.getElementById('btnSalvarLembrete').onclick = async ()=>{
+    const titulo = document.getElementById('nlTitulo').value.trim();
+    const dataISO = document.getElementById('nlData').value;
+    if(!titulo){ toast('Informe o título do lembrete.'); return; }
+    if(!dataISO){ toast('Informe a data.'); return; }
+    const novo = {
+      id: 'lmb_'+uid(), titulo, dataISO,
+      hora: document.getElementById('nlHora').value || null,
+      categoria: document.getElementById('nlCategoria').value || null,
+      relacionado: document.getElementById('nlRelacionado').value.trim() || null,
+      concluida: false, criadoEm: new Date().toISOString(),
+    };
+    TAREFAS.push(novo);
+    TAREFAS.sort((a,b)=> (a.dataISO||'').localeCompare(b.dataISO||'') || (a.hora||'').localeCompare(b.hora||''));
+    if(db && canWrite){ try{ await db.collection('tarefas').doc(novo.id).set(novo); }catch(e){ console.error(e); toast('Lembrete salvo nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Lembrete criado.');
+    if(currentView()==='tarefas'){ paintCalendario(); paintListaTarefas(); }
+    else if(currentView()==='dashboard'){ renderShellForRoute(); }
+  };
+}
 
 /* ================= NOVA PROPOSTA (wizard) ================= */
 function novoNumeroProposta(){
