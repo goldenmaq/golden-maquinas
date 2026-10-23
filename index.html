@@ -2652,7 +2652,7 @@ Responda SOMENTE o JSON, sem comentários.`;
     console.error(e);
     atualizarStatusDitadoAta('');
     const msg = (e && e.message) || '';
-    if(/ANTHROPIC_API_KEY/i.test(msg)) toast('IA não configurada: defina ANTHROPIC_API_KEY nas variáveis de ambiente do projeto na Vercel (Settings → Environment Variables) e faça um novo deploy.');
+    if(/API_KEY/i.test(msg)) toast('IA não configurada: defina GEMINI_API_KEY (ou ANTHROPIC_API_KEY) nas variáveis de ambiente do projeto na Vercel (Settings → Environment Variables) e faça um novo deploy.');
     else toast('Não foi possível preencher com IA agora. Tente novamente.');
   }finally{
     ataDitadoBusy = false;
