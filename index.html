@@ -105,6 +105,14 @@
   .searchbar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
   .searchbar input{flex:1;min-width:200px}
   .catgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+  .preco-grupo{margin-bottom:18px;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+  .preco-grupo-head{background:var(--navy-deep);color:#fff;font-family:var(--font-display);text-transform:uppercase;letter-spacing:.03em;font-size:15px;font-weight:700;padding:12px 16px}
+  .preco-tabela{width:100%;border-collapse:collapse}
+  .preco-tabela thead th{background:var(--gold);color:var(--navy-deep);font-family:var(--font-display);text-transform:uppercase;letter-spacing:.02em;font-size:12px;font-weight:700;padding:9px 14px;text-align:left;white-space:nowrap}
+  .preco-tabela thead th:first-child{background:#0c0c0c;color:#fff}
+  .preco-tabela td{padding:9px 14px;border-top:1px solid var(--border);font-size:13px}
+  .preco-tabela td.preco-nome{background:var(--navy);color:#fff;font-weight:700;white-space:nowrap}
+  .preco-tabela tbody tr:nth-child(even) td:not(.preco-nome){background:var(--surface-2)}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
   .cal-head{margin-bottom:4px}
   .cal-head div{font-size:11px;color:var(--muted);text-transform:uppercase;text-align:center}
@@ -1023,16 +1031,14 @@ function abrirEditarProdutoModal(id){
     closeModal(); toast('Produto atualizado.'); if(currentView()==='catalogo') renderCatalogo(document.getElementById('app'));
   };
 }
-/* ================= TABELA DE PREÇOS (consulta rápida) ================= */
+/* ================= TABELA DE PREÇOS (consulta rápida, no padrão da planilha Golden Eagle) ================= */
 function renderPrecos(app){
   app.innerHTML = `
-    <div class="pagehead"><h1>Tabela de Preços</h1><span class="hint">${CATALOGO.length} itens · consulta rápida de FOB, Serviço Brasil Total e tempo de fabricação</span></div>
+    <div class="pagehead"><h1>Tabela de Preços</h1><span class="hint">${CATALOGO.length} itens · todos os modelos, por linha</span></div>
     <div class="card pad" style="margin-bottom:12px">
       <input id="precosBusca" placeholder="Buscar por nome da máquina..." value="${esc(precosFiltro.termo)}" style="width:100%;max-width:360px">
     </div>
-    <div class="card pad" style="overflow-x:auto">
-      <table id="precosTabela"><thead><tr><th>Nome da Máquina</th><th>FOB</th><th>Serviço Brasil Total</th><th>Tempo de Fabricação</th></tr></thead><tbody></tbody></table>
-    </div>
+    <div id="precosGrupos"></div>
     <div class="card pad" style="margin-top:12px">
       <h3 style="font-size:14px;margin-bottom:4px">Comissão de Representantes</h3>
       <p class="hint" style="margin-bottom:10px">Comissão calculada sobre o valor total da venda. Pagamento ao representante segue as regras de recebimento do Serviço Brasil (liberado conforme o Serviço Brasil é recebido).</p>
@@ -1045,17 +1051,34 @@ function renderPrecos(app){
   paintTabelaPrecos();
 }
 function paintTabelaPrecos(){
-  const tbody = document.querySelector('#precosTabela tbody'); if(!tbody) return;
+  const wrap = document.getElementById('precosGrupos'); if(!wrap) return;
   const t = precosFiltro.termo.trim().toUpperCase();
-  const list = CATALOGO.filter(c=> !t || (c.modelo||'').toUpperCase().includes(t))
-    .sort((a,b)=> (a.modelo||'').localeCompare(b.modelo||'', undefined, {numeric:true}));
-  tbody.innerHTML = list.length? list.map(c=>`
-    <tr>
-      <td><b>${esc(c.modelo)}</b>${c.categoria||c.linha? `<br><span class="hint">${esc(c.categoria||c.linha)}</span>`:''}</td>
-      <td class="mono">${fmtUSD(c.fob)}</td>
-      <td class="mono">${fmtUSD(c.total)}</td>
-      <td>${esc(c.tempo_fabricacao||'—')}</td>
-    </tr>`).join('') : `<tr><td colspan="4"><div class="empty">Nenhuma máquina encontrada.</div></td></tr>`;
+  const base = CATALOGO.filter(c=> !t || (c.modelo||'').toUpperCase().includes(t) || (c.categoria||c.linha||'').toUpperCase().includes(t));
+  if(!base.length){ wrap.innerHTML = '<div class="card pad"><div class="empty">Nenhuma máquina encontrada.</div></div>'; return; }
+  const grupos = {};
+  base.forEach(c=>{ const g = c.categoria || c.linha || 'Outros'; (grupos[g] = grupos[g]||[]).push(c); });
+  const nomesGrupos = Object.keys(grupos).sort((a,b)=> a.localeCompare(b, undefined, {numeric:true}));
+  wrap.innerHTML = nomesGrupos.map(g=>{
+    const itens = grupos[g].sort((a,b)=> (a.modelo||'').localeCompare(b.modelo||'', undefined, {numeric:true}));
+    return `
+    <div class="preco-grupo">
+      <div class="preco-grupo-head">${esc(g)}</div>
+      <div style="overflow-x:auto">
+      <table class="preco-tabela">
+        <thead><tr><th>Máquinas</th><th>Total</th><th>Serviços Brasil</th><th>FOB (câmbio)</th><th>Tempo de Fabricação</th></tr></thead>
+        <tbody>${itens.map(c=>`
+          <tr>
+            <td class="preco-nome">${esc(c.modelo)}</td>
+            <td class="mono">${fmtUSD(c.total)}</td>
+            <td class="mono">${fmtUSD(c.servicos_brasil)}</td>
+            <td class="mono">${fmtUSD(c.fob)}</td>
+            <td>${esc(c.tempo_fabricacao||'—')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>`;
+  }).join('');
 }
 function filteredCatalogo(){
   const t = catFiltro.termo.trim().toUpperCase();
