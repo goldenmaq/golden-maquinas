@@ -2524,10 +2524,10 @@ function dpHead(){
   return `<div class="dp-logo-wrap"><img src="${document.getElementById('logoImg').src}" alt="Goldenmaq"></div>`;
 }
 const FOTOS_EQUIP = {
-  esteira: 'assets/foto-esteira.jpg',
-  robo: 'assets/foto-robo.jpg',
-  injetoraGold: 'assets/foto-injetora-gold.jpg',
-  injetoraSilver: 'assets/foto-injetora-silver.jpg',
+  esteira: location.origin + '/assets/foto-esteira.jpg',
+  robo: location.origin + '/assets/foto-robo.jpg',
+  injetoraGold: location.origin + '/assets/foto-injetora-gold.jpg',
+  injetoraSilver: location.origin + '/assets/foto-injetora-silver.jpg',
 };
 function fotoEquipamento(c){
   if(c.foto) return c.foto;
