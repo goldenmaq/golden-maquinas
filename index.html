@@ -239,6 +239,21 @@
       <div class="field"><label>Senha</label><input type="password" id="loginSenha" autocomplete="current-password" required></div>
       <div id="loginErro" class="hint" style="color:var(--danger);display:none"></div>
       <button type="submit" class="btn primary" style="width:100%;justify-content:center;margin-top:6px">Entrar</button>
+      <div style="text-align:center;margin-top:10px"><a href="#" id="linkEsqueciSenha" style="font-size:12.5px;color:var(--muted)">Esqueci minha senha</a></div>
+    </form>
+    <form id="forgotForm" style="display:none">
+      <span class="hint" style="display:block;margin-bottom:10px">Informe o e-mail cadastrado. Se existir, enviaremos um link para redefinir a senha.</span>
+      <div class="field"><label>E-mail</label><input type="email" id="forgotEmail" autocomplete="username" required></div>
+      <div id="forgotMsg" class="hint" style="display:none"></div>
+      <button type="submit" class="btn primary" style="width:100%;justify-content:center;margin-top:6px">Enviar link</button>
+      <div style="text-align:center;margin-top:10px"><a href="#" id="linkVoltarLogin" style="font-size:12.5px;color:var(--muted)">Voltar para o login</a></div>
+    </form>
+    <form id="resetForm" style="display:none">
+      <span class="hint" style="display:block;margin-bottom:10px">Defina sua nova senha.</span>
+      <div class="field"><label>Nova senha</label><input type="password" id="resetNovaSenha" autocomplete="new-password" required minlength="6"></div>
+      <div class="field"><label>Confirmar senha</label><input type="password" id="resetConfirmaSenha" autocomplete="new-password" required minlength="6"></div>
+      <div id="resetErro" class="hint" style="color:var(--danger);display:none"></div>
+      <button type="submit" class="btn primary" style="width:100%;justify-content:center;margin-top:6px">Redefinir senha</button>
     </form>
   </div>
 </div>
@@ -552,12 +567,26 @@ function aplicarPermissoesNav(){
   const nomeEl = document.getElementById('sideUserName');
   if(nomeEl && CURRENT_USER) nomeEl.textContent = (CURRENT_USER.name || CURRENT_USER.email) + (CURRENT_USER.isMaster? ' · Mestre' : '');
 }
+function mostrarTelaLogin(tela){
+  // tela: 'login' | 'forgot' | 'reset'
+  document.getElementById('loginForm').style.display = tela==='login' ? '' : 'none';
+  document.getElementById('forgotForm').style.display = tela==='forgot' ? '' : 'none';
+  document.getElementById('resetForm').style.display = tela==='reset' ? '' : 'none';
+}
 function mostrarLogin(){
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('appShell').style.display = 'none';
   const campoSenha = document.getElementById('loginSenha');
   if(campoSenha) campoSenha.value = '';
-  setTimeout(()=>{ const el = document.getElementById('loginEmail'); if(el) el.focus(); }, 50);
+  const params = new URLSearchParams(location.search);
+  const resetToken = params.get('reset');
+  const resetEmail = params.get('email');
+  if(resetToken && resetEmail){
+    mostrarTelaLogin('reset');
+  }else{
+    mostrarTelaLogin('login');
+    setTimeout(()=>{ const el = document.getElementById('loginEmail'); if(el) el.focus(); }, 50);
+  }
 }
 function mostrarApp(){
   document.getElementById('loginScreen').style.display = 'none';
@@ -590,6 +619,61 @@ function wireLoginForm(){
     location.reload();
   });
   document.getElementById('btnTrocarSenha').addEventListener('click', abrirModalTrocarSenha);
+
+  document.getElementById('linkEsqueciSenha').addEventListener('click', (e)=>{
+    e.preventDefault();
+    document.getElementById('forgotEmail').value = document.getElementById('loginEmail').value.trim();
+    document.getElementById('forgotMsg').style.display = 'none';
+    mostrarTelaLogin('forgot');
+  });
+  document.getElementById('linkVoltarLogin').addEventListener('click', (e)=>{
+    e.preventDefault();
+    mostrarTelaLogin('login');
+  });
+  document.getElementById('forgotForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById('forgotEmail').value.trim();
+    const msgEl = document.getElementById('forgotMsg');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    try{
+      await apiAuth('forgot-password', {method:'POST', body:{email}});
+      msgEl.style.color = 'var(--ok, #2e7d32)';
+      msgEl.textContent = 'Se o e-mail existir, enviamos um link de redefinição. Confira a caixa de entrada (e o spam).';
+      msgEl.style.display = 'block';
+    }catch(err){
+      msgEl.style.color = 'var(--danger)';
+      msgEl.textContent = err.message || 'Não foi possível enviar o e-mail.';
+      msgEl.style.display = 'block';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Enviar link';
+    }
+  });
+  document.getElementById('resetForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const erroEl = document.getElementById('resetErro');
+    erroEl.style.display = 'none';
+    const nova = document.getElementById('resetNovaSenha').value;
+    const confirma = document.getElementById('resetConfirmaSenha').value;
+    if(nova !== confirma){ erroEl.textContent = 'As senhas não coincidem.'; erroEl.style.display = 'block'; return; }
+    const params = new URLSearchParams(location.search);
+    const token = params.get('reset');
+    const email = params.get('email');
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    try{
+      await apiAuth('reset-password', {method:'POST', body:{email, token, newPassword: nova}});
+      history.replaceState(null, '', location.pathname);
+      toast('Senha redefinida. Faça login com a nova senha.');
+      mostrarTelaLogin('login');
+      document.getElementById('loginEmail').value = email || '';
+    }catch(err){
+      erroEl.textContent = err.message || 'Não foi possível redefinir a senha. O link pode ter expirado.';
+      erroEl.style.display = 'block';
+    }finally{
+      btn.disabled = false; btn.textContent = 'Redefinir senha';
+    }
+  });
 }
 function abrirModalTrocarSenha(){
   openModal(`
