@@ -1034,10 +1034,11 @@ function renderPrecos(app){
       <table id="precosTabela"><thead><tr><th>Nome da Máquina</th><th>FOB</th><th>Serviço Brasil Total</th><th>Tempo de Fabricação</th></tr></thead><tbody></tbody></table>
     </div>
     <div class="card pad" style="margin-top:12px">
-      <h3 style="font-size:14px;margin-bottom:10px">Comissão de Representantes</h3>
+      <h3 style="font-size:14px;margin-bottom:4px">Comissão de Representantes</h3>
+      <p class="hint" style="margin-bottom:10px">Comissão calculada sobre o valor total da venda. Pagamento ao representante segue as regras de recebimento do Serviço Brasil (liberado conforme o Serviço Brasil é recebido).</p>
       <div class="grid cols-2" style="gap:10px">
-        <div class="field"><label>Representante</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">5%</div><span class="hint">sobre o recebimento do Serviço Brasil</span></div>
-        <div class="field"><label>Indicação</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">1%</div><span class="hint">sobre o recebimento do Serviço Brasil</span></div>
+        <div class="field"><label>Representante</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">5%</div><span class="hint">do valor total da venda · pago conforme recebimento do Serviço Brasil</span></div>
+        <div class="field"><label>Indicação</label><div style="font-size:18px;font-weight:700;color:var(--navy-deep)">1%</div><span class="hint">do valor total da venda · pago conforme recebimento do Serviço Brasil</span></div>
       </div>
     </div>`;
   document.getElementById('precosBusca').oninput = (e)=>{ precosFiltro.termo = e.target.value; paintTabelaPrecos(); };
