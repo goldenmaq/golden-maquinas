@@ -279,6 +279,7 @@
     <a class="navlink" data-view="atas" href="#atas"><span class="dot"></span>Ata de Visita</a>
     <a class="navlink" data-view="ocs" href="#ocs"><span class="dot"></span>Ordem de Compra</a>
     <a class="navlink" data-view="tarefas" href="#tarefas"><span class="dot"></span>Calendário</a>
+    <a class="navlink" data-view="anotacoes" href="#anotacoes"><span class="dot"></span>Anotações</a>
     <a class="navlink" data-view="mensagens" href="#mensagens"><span class="dot"></span>Mensagens</a>
     <a class="navlink" data-view="usuarios" id="navUsuarios" href="#usuarios"><span class="dot"></span>Usuários</a>
     <div class="side-foot">
@@ -312,6 +313,7 @@ const NAV = [
   {id:'atas', label:'Ata de Visita'},
   {id:'ocs', label:'Ordem de Compra'},
   {id:'tarefas', label:'Calendário'},
+  {id:'anotacoes', label:'Anotações'},
   {id:'mensagens', label:'Mensagens'},
   {id:'usuarios', label:'Usuários'},
 ];
@@ -340,6 +342,8 @@ let ocDraft = null;
 let unsubOCs = null;
 let TAREFAS = [];
 let unsubTarefas = null;
+let ANOTACOES = [];
+let unsubAnotacoes = null;
 let tarefaCalRef = new Date(); // mês/ano exibido no calendário
 let tarefaDiaFiltro = null;    // 'YYYY-MM-DD' quando um dia específico está selecionado
 let THREADS = {};      // mensagens/{threadKey} -> {estagio, ultimaMsg, lidoPor}
@@ -777,6 +781,7 @@ async function loadCollections(){
   subscribeOCs();
   subscribeThreads();
   subscribeTarefas();
+  subscribeAnotacoes();
   renderShellForRoute();
 }
 function subscribeThreads(){
@@ -840,6 +845,13 @@ function subscribeTarefas(){
     if(v==='tarefas' || v==='dashboard' || v==='') renderShellForRoute();
   }, err=>{ console.error('tarefas snapshot', err); });
 }
+function subscribeAnotacoes(){
+  if(unsubAnotacoes) unsubAnotacoes();
+  unsubAnotacoes = db.collection('anotacoes').limit(1000).onSnapshot(snap=>{
+    ANOTACOES = snap.docs.map(d=>d.data()).sort((a,b)=> (b.atualizadoEm||b.criadoEm||'').localeCompare(a.atualizadoEm||a.criadoEm||''));
+    if(location.hash.slice(1)==='anotacoes') renderShellForRoute();
+  }, err=>{ console.error('anotacoes snapshot', err); });
+}
 
 /* ---------- nav / routing ---------- */
 function wireNav(){
@@ -882,6 +894,7 @@ function renderShellForRoute(){
   if(view==='atas') return renderAtas(app);
   if(view==='ocs') return renderOCs(app);
   if(view==='tarefas') return renderTarefas(app);
+  if(view==='anotacoes') return renderAnotacoes(app);
   if(view==='mensagens') return renderMensagens(app);
 }
 
@@ -1588,14 +1601,27 @@ function paintClientes(){
     (list.length? list.map(c=>`
     <div class="client-row">
       <div><b>${esc(c.nome_fantasia||c.razao_social)}</b><small>${esc(c.cidade||'')} ${c.cnpj?'· CNPJ '+esc(c.cnpj):''} ${c.representante?'· Rep.: '+esc(c.representante):''}</small></div>
-      <button class="btn" data-cli="${esc(c.id)}">Ver / usar em proposta</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" data-cli="${esc(c.id)}" style="padding:5px 9px;font-size:12px">Ver / usar em proposta</button>
+        <button class="btn" data-cliedit="${esc(c.id)}" style="padding:5px 9px;font-size:12px">Editar</button>
+        <button class="btn danger" data-clidel="${esc(c.id)}" style="padding:5px 9px;font-size:12px">Excluir</button>
+      </div>
     </div>`).join('') : `<div class="empty"><b>Nenhum cliente encontrado</b>Tente outro termo ou cadastre um novo cliente.</div>`);
   el.querySelectorAll('[data-cli]').forEach(b=> b.onclick=()=>{
     const c = CLIENTES.find(x=>x.id===b.dataset.cli);
     verClienteModal(c);
   });
+  el.querySelectorAll('[data-cliedit]').forEach(b=> b.onclick=()=>{
+    const c = CLIENTES.find(x=>x.id===b.dataset.cliedit);
+    abrirEditarClienteModal(c);
+  });
+  el.querySelectorAll('[data-clidel]').forEach(b=> b.onclick=()=>{
+    const c = CLIENTES.find(x=>x.id===b.dataset.clidel);
+    excluirCliente(c);
+  });
 }
 function verClienteModal(c){
+  const contatos = c.contatos||[];
   openModal(`
     <h2 style="font-size:17px;margin-bottom:10px">${esc(c.nome_fantasia||c.razao_social)}</h2>
     <table><tbody>
@@ -1607,30 +1633,117 @@ function verClienteModal(c){
       <tr><td class="hint">E-mail</td><td>${esc(c.email||'—')}</td></tr>
       <tr><td class="hint">Representante</td><td>${esc(c.representante||'—')}</td></tr>
     </tbody></table>
+    ${contatos.length? `<p class="hint" style="margin-top:12px;margin-bottom:4px">Outros contatos</p>
+      <table><tbody>${contatos.map(ct=>`<tr><td>${esc(ct.nome||'—')}</td><td>${esc(ct.telefone||'—')}</td><td>${esc(ct.email||'—')}</td></tr>`).join('')}</tbody></table>`:''}
     ${c.observacoes? `<p class="hint" style="margin-top:10px;white-space:pre-wrap">${esc(c.observacoes).slice(0,600)}</p>`:''}
     <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
       <button class="btn" onclick="closeModal()">Fechar</button>
+      <button class="btn" id="btnEditarClienteModal">Editar</button>
       <button class="btn primary" id="btnUsarCliente">Usar nesta proposta</button>
     </div>`);
   document.getElementById('btnUsarCliente').onclick = ()=>{ closeModal(); iniciarNovaProposta(c); location.hash = 'nova'; };
+  document.getElementById('btnEditarClienteModal').onclick = ()=>{ closeModal(); abrirEditarClienteModal(c); };
+}
+function excluirCliente(c){
+  openModal(`<h2 style="font-size:17px;margin-bottom:10px">Excluir cliente</h2>
+    <p>Tem certeza que deseja excluir o cliente <b>${esc(c.nome_fantasia||c.razao_social)}</b>? Esta ação não pode ser desfeita.</p>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="btnConfirmaExcluirCliente">Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnConfirmaExcluirCliente').onclick = async ()=>{
+    CLIENTES = CLIENTES.filter(x=>x.id!==c.id);
+    if(db && canWrite){ try{ await db.collection('clientes').doc(c.id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+    closeModal(); toast('Cliente excluído.');
+    if(currentView()==='clientes') paintClientes();
+  };
+}
+// Busca dados públicos de um CNPJ (Receita Federal, via BrasilAPI) para pré-preencher o cadastro.
+async function buscarDadosCNPJ(cnpjRaw){
+  const digits = (cnpjRaw||'').replace(/\D/g,'');
+  if(digits.length!==14){ toast('Informe um CNPJ válido (14 dígitos) para buscar.'); return null; }
+  try{
+    const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+    if(!r.ok) throw new Error('cnpj não encontrado');
+    return await r.json();
+  }catch(e){
+    console.error(e);
+    toast('Não foi possível buscar esse CNPJ. Verifique o número ou preencha manualmente.');
+    return null;
+  }
+}
+function wireCnpjBusca(prefix, contatosGetter){
+  const btn = document.getElementById(prefix+'BuscarCnpj');
+  if(!btn) return;
+  btn.onclick = async ()=>{
+    btn.disabled = true; const orig = btn.textContent; btn.textContent = 'Buscando...';
+    const d = await buscarDadosCNPJ(document.getElementById(prefix+'Cnpj').value);
+    btn.disabled = false; btn.textContent = orig;
+    if(!d) return;
+    if(d.razao_social) document.getElementById(prefix+'Razao').value = d.razao_social;
+    if(d.nome_fantasia) document.getElementById(prefix+'Fantasia').value = d.nome_fantasia;
+    const cidadeUf = [d.municipio, d.uf].filter(Boolean).join(' / ');
+    if(cidadeUf) document.getElementById(prefix+'Cidade').value = cidadeUf;
+    const email = document.getElementById(prefix+'Email');
+    if(email && !email.value && d.email) email.value = d.email;
+    const tel = document.getElementById(prefix+'Tel');
+    if(tel && !tel.value && d.ddd_telefone_1) tel.value = d.ddd_telefone_1;
+    toast('Dados do CNPJ preenchidos automaticamente. Confira antes de salvar.');
+  };
+}
+// Lista editável de contatos adicionais (nome, telefone, e-mail) de um cliente.
+function renderContatosEditor(containerId, contatos){
+  const el = document.getElementById(containerId); if(!el) return;
+  el.innerHTML = (contatos.length? contatos.map((ct,i)=>`
+    <div class="grid cols-3" style="gap:6px;margin-bottom:6px" data-contato-row="${i}">
+      <input placeholder="Nome" value="${esc(ct.nome||'')}" data-ct="nome">
+      <input placeholder="Telefone" value="${esc(ct.telefone||'')}" data-ct="telefone">
+      <div style="display:flex;gap:6px">
+        <input placeholder="E-mail" value="${esc(ct.email||'')}" data-ct="email" style="flex:1">
+        <button class="btn danger" type="button" data-rmct="${i}" style="padding:5px 9px">×</button>
+      </div>
+    </div>`).join('') : `<p class="hint" style="margin:4px 0">Nenhum contato adicional.</p>`);
+  el.querySelectorAll('[data-ct]').forEach(inp=>{
+    inp.oninput = ()=>{
+      const row = inp.closest('[data-contato-row]'); const i = +row.dataset.contatoRow;
+      contatos[i][inp.dataset.ct] = inp.value;
+    };
+  });
+  el.querySelectorAll('[data-rmct]').forEach(b=> b.onclick = ()=>{
+    contatos.splice(+b.dataset.rmct, 1);
+    renderContatosEditor(containerId, contatos);
+  });
+}
+function clienteFormFieldsHtml(prefix){
+  return `
+    <div class="grid cols-2" style="gap:10px">
+      <div class="field"><label>Razão social *</label><input id="${prefix}Razao"></div>
+      <div class="field"><label>Nome fantasia</label><input id="${prefix}Fantasia"></div>
+      <div class="field"><label>CNPJ</label><div style="display:flex;gap:6px"><input id="${prefix}Cnpj" placeholder="Somente números" style="flex:1"><button class="btn" type="button" id="${prefix}BuscarCnpj">Buscar</button></div></div>
+      <div class="field"><label>Cidade / UF</label><input id="${prefix}Cidade"></div>
+      <div class="field"><label>Contato comercial</label><input id="${prefix}Contato"></div>
+      <div class="field"><label>E-mail</label><input id="${prefix}Email"></div>
+      <div class="field"><label>Telefone</label><input id="${prefix}Tel"></div>
+      <div class="field"><label>Representante</label><input id="${prefix}Rep"></div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>Contatos adicionais (nome, telefone, e-mail)</label>
+      <div id="${prefix}ContatosList"></div>
+      <button class="btn" type="button" id="${prefix}AddContato" style="margin-top:4px">+ Adicionar contato</button>
+    </div>`;
 }
 function abrirNovoClienteModal(){
+  const contatos = [];
   openModal(`
     <h2 style="font-size:17px;margin-bottom:12px">Novo cliente</h2>
-    <div class="grid cols-2" style="gap:10px">
-      <div class="field"><label>Razão social *</label><input id="ncRazao"></div>
-      <div class="field"><label>Nome fantasia</label><input id="ncFantasia"></div>
-      <div class="field"><label>CNPJ</label><input id="ncCnpj"></div>
-      <div class="field"><label>Cidade / UF</label><input id="ncCidade"></div>
-      <div class="field"><label>Contato comercial</label><input id="ncContato"></div>
-      <div class="field"><label>E-mail</label><input id="ncEmail"></div>
-      <div class="field"><label>Telefone</label><input id="ncTel"></div>
-      <div class="field"><label>Representante</label><input id="ncRep"></div>
-    </div>
+    ${clienteFormFieldsHtml('nc')}
     <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
       <button class="btn" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" id="btnSalvarCliente">Salvar cliente</button>
     </div>`);
+  renderContatosEditor('ncContatosList', contatos);
+  document.getElementById('ncAddContato').onclick = ()=>{ contatos.push({nome:'',telefone:'',email:''}); renderContatosEditor('ncContatosList', contatos); };
+  wireCnpjBusca('nc');
   document.getElementById('btnSalvarCliente').onclick = async ()=>{
     const razao = document.getElementById('ncRazao').value.trim();
     if(!razao){ toast('Informe a razão social.'); return; }
@@ -1639,11 +1752,49 @@ function abrirNovoClienteModal(){
       cnpj: document.getElementById('ncCnpj').value.trim()||null, cidade: document.getElementById('ncCidade').value.trim()||null,
       email: document.getElementById('ncEmail').value.trim()||null, telefone: document.getElementById('ncTel').value.trim()||null,
       representante: document.getElementById('ncRep').value.trim()||null, contato: document.getElementById('ncContato').value.trim()||null,
+      contatos: contatos.filter(ct=> ct.nome||ct.telefone||ct.email),
       observacoes: null,
     };
     CLIENTES.unshift(novo);
     if(db && canWrite){ try{ await db.collection('clientes').doc(novo.id).set(novo); }catch(e){ console.error(e); toast('Cliente salvo nesta sessão, mas não foi possível gravar no banco.'); } }
     closeModal(); toast('Cliente cadastrado.'); if(currentView()==='clientes') paintClientes();
+  };
+}
+function abrirEditarClienteModal(c){
+  const contatos = (c.contatos||[]).map(ct=>({...ct}));
+  openModal(`
+    <h2 style="font-size:17px;margin-bottom:12px">Editar cliente</h2>
+    ${clienteFormFieldsHtml('ec')}
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarEdicaoCliente">Salvar alterações</button>
+    </div>`);
+  document.getElementById('ecRazao').value = c.razao_social||'';
+  document.getElementById('ecFantasia').value = c.nome_fantasia||'';
+  document.getElementById('ecCnpj').value = c.cnpj||'';
+  document.getElementById('ecCidade').value = c.cidade||'';
+  document.getElementById('ecContato').value = c.contato||'';
+  document.getElementById('ecEmail').value = c.email||'';
+  document.getElementById('ecTel').value = c.telefone||'';
+  document.getElementById('ecRep').value = c.representante||'';
+  renderContatosEditor('ecContatosList', contatos);
+  document.getElementById('ecAddContato').onclick = ()=>{ contatos.push({nome:'',telefone:'',email:''}); renderContatosEditor('ecContatosList', contatos); };
+  wireCnpjBusca('ec');
+  document.getElementById('btnSalvarEdicaoCliente').onclick = async ()=>{
+    const razao = document.getElementById('ecRazao').value.trim();
+    if(!razao){ toast('Informe a razão social.'); return; }
+    const atualizado = {
+      ...c,
+      razao_social: razao, nome_fantasia: document.getElementById('ecFantasia').value.trim()||razao,
+      cnpj: document.getElementById('ecCnpj').value.trim()||null, cidade: document.getElementById('ecCidade').value.trim()||null,
+      email: document.getElementById('ecEmail').value.trim()||null, telefone: document.getElementById('ecTel').value.trim()||null,
+      representante: document.getElementById('ecRep').value.trim()||null, contato: document.getElementById('ecContato').value.trim()||null,
+      contatos: contatos.filter(ct=> ct.nome||ct.telefone||ct.email),
+    };
+    const idx = CLIENTES.findIndex(x=>x.id===c.id);
+    if(idx>-1) CLIENTES[idx] = atualizado; else CLIENTES.unshift(atualizado);
+    if(db && canWrite){ try{ await db.collection('clientes').doc(c.id).set(atualizado); }catch(e){ console.error(e); toast('Alterações salvas nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Cliente atualizado.'); if(currentView()==='clientes') paintClientes();
   };
 }
 
@@ -1982,6 +2133,108 @@ function abrirNovoLembreteModal(dataInicial){
     closeModal(); toast('Lembrete criado.');
     if(currentView()==='tarefas'){ paintCalendario(); paintListaTarefas(); }
     else if(currentView()==='dashboard'){ renderShellForRoute(); }
+  };
+}
+
+/* ================= ANOTAÇÕES (notas livres, além dos lembretes) ================= */
+let anotacaoFiltro = '';
+function fmtDataHoraBR(iso){
+  if(!iso) return '';
+  const d = new Date(iso); if(isNaN(d)) return '';
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
+function renderAnotacoes(app){
+  app.innerHTML = `
+    <div class="pagehead"><h1>Anotações</h1><button class="btn primary" id="btnNovaAnotacao">+ Nova anotação</button></div>
+    <div class="searchbar"><input id="anotBusca" placeholder="Buscar por título ou texto..." value="${esc(anotacaoFiltro)}"></div>
+    <div class="card pad" id="anotLista"></div>`;
+  document.getElementById('anotBusca').oninput = e=>{ anotacaoFiltro = e.target.value; paintAnotacoes(); };
+  document.getElementById('btnNovaAnotacao').onclick = ()=> abrirNovaAnotacaoModal();
+  paintAnotacoes();
+}
+function filteredAnotacoes(){
+  const t = anotacaoFiltro.trim().toUpperCase();
+  const base = ANOTACOES.slice();
+  if(!t) return base;
+  return base.filter(a=> [a.titulo, a.texto].some(v=> v && String(v).toUpperCase().includes(t)));
+}
+function paintAnotacoes(){
+  const el = document.getElementById('anotLista'); if(!el) return;
+  const list = filteredAnotacoes();
+  el.innerHTML = (list.length? list.map(a=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="min-width:0">
+          <b>${esc(a.titulo||'(sem título)')}</b>
+          <small class="hint" style="display:block;margin-top:2px">${esc(fmtDataHoraBR(a.atualizadoEm||a.criadoEm))}${a.atualizadoEm && a.atualizadoEm!==a.criadoEm? ' · editada':''}</small>
+        </div>
+        <div style="display:flex;gap:6px;flex:none">
+          <button class="btn" data-anotedit="${esc(a.id)}" style="padding:5px 9px;font-size:12px">Editar</button>
+          <button class="btn danger" data-anotdel="${esc(a.id)}" style="padding:5px 9px;font-size:12px">Excluir</button>
+        </div>
+      </div>
+      ${a.texto? `<p style="margin:8px 0 0;white-space:pre-wrap">${esc(a.texto)}</p>` : ''}
+    </div>`).join('') : `<div class="empty"><b>Nenhuma anotação ainda</b>Clique em "+ Nova anotação" para criar a primeira. É um espaço livre para suas notas, separado dos lembretes do Calendário.</div>`);
+  el.querySelectorAll('[data-anotedit]').forEach(b=> b.onclick = ()=>{
+    const a = ANOTACOES.find(x=>x.id===b.dataset.anotedit); if(a) abrirEditarAnotacaoModal(a);
+  });
+  el.querySelectorAll('[data-anotdel]').forEach(b=> b.onclick = ()=> excluirAnotacao(b.dataset.anotdel));
+}
+function excluirAnotacao(id){
+  const a = ANOTACOES.find(x=>x.id===id); if(!a) return;
+  openModal(`<h2 style="font-size:17px;margin-bottom:10px">Excluir anotação</h2>
+    <p>Tem certeza que deseja excluir a anotação <b>${esc(a.titulo||'(sem título)')}</b>? Esta ação não pode ser desfeita.</p>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="btnConfirmaExcluirAnotacao">Excluir definitivamente</button>
+    </div>`);
+  document.getElementById('btnConfirmaExcluirAnotacao').onclick = async ()=>{
+    ANOTACOES = ANOTACOES.filter(x=>x.id!==id);
+    if(db && canWrite){ try{ await db.collection('anotacoes').doc(id).delete(); }catch(e){ console.error(e); toast('Não foi possível excluir no banco.'); } }
+    closeModal(); toast('Anotação excluída.');
+    if(currentView()==='anotacoes') paintAnotacoes();
+  };
+}
+function abrirNovaAnotacaoModal(){
+  openModal(`
+    <h2 style="font-size:17px;margin-bottom:12px">Nova anotação</h2>
+    <div class="field"><label>Título</label><input id="anTitulo" placeholder="Ex.: Ideia para a próxima visita"></div>
+    <div class="field" style="margin-top:10px"><label>Texto</label><textarea id="anTexto" rows="6" placeholder="Escreva livremente aqui..."></textarea></div>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarAnotacao">Salvar anotação</button>
+    </div>`);
+  document.getElementById('btnSalvarAnotacao').onclick = async ()=>{
+    const titulo = document.getElementById('anTitulo').value.trim();
+    const texto = document.getElementById('anTexto').value.trim();
+    if(!titulo && !texto){ toast('Escreva algo antes de salvar.'); return; }
+    const agora = new Date().toISOString();
+    const nova = { id: 'anot_'+uid(), titulo: titulo||null, texto: texto||null, criadoEm: agora, atualizadoEm: agora };
+    ANOTACOES.unshift(nova);
+    if(db && canWrite){ try{ await db.collection('anotacoes').doc(nova.id).set(nova); }catch(e){ console.error(e); toast('Anotação salva nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Anotação criada.');
+    if(currentView()==='anotacoes') paintAnotacoes();
+  };
+}
+function abrirEditarAnotacaoModal(a){
+  openModal(`
+    <h2 style="font-size:17px;margin-bottom:12px">Editar anotação</h2>
+    <div class="field"><label>Título</label><input id="anTitulo" value="${esc(a.titulo||'')}" placeholder="Ex.: Ideia para a próxima visita"></div>
+    <div class="field" style="margin-top:10px"><label>Texto</label><textarea id="anTexto" rows="6" placeholder="Escreva livremente aqui...">${esc(a.texto||'')}</textarea></div>
+    <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" id="btnSalvarEdicaoAnotacao">Salvar alterações</button>
+    </div>`);
+  document.getElementById('btnSalvarEdicaoAnotacao').onclick = async ()=>{
+    const titulo = document.getElementById('anTitulo').value.trim();
+    const texto = document.getElementById('anTexto').value.trim();
+    if(!titulo && !texto){ toast('Escreva algo antes de salvar.'); return; }
+    const atualizada = { ...a, titulo: titulo||null, texto: texto||null, atualizadoEm: new Date().toISOString() };
+    const idx = ANOTACOES.findIndex(x=>x.id===a.id);
+    if(idx>-1) ANOTACOES[idx] = atualizada; else ANOTACOES.unshift(atualizada);
+    if(db && canWrite){ try{ await db.collection('anotacoes').doc(a.id).set(atualizada); }catch(e){ console.error(e); toast('Alterações salvas nesta sessão, mas não foi possível gravar no banco.'); } }
+    closeModal(); toast('Anotação atualizada.');
+    if(currentView()==='anotacoes') paintAnotacoes();
   };
 }
 
