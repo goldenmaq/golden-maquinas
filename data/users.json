@@ -27,6 +27,18 @@
       ],
       "active": true,
       "criadoEm": "2026-10-23T21:37:34.611Z"
+    },
+    {
+      "id": "u_mvpb3q7g_jsi0e4",
+      "email": "comercial@goldenmaq.com.br",
+      "name": "Karine",
+      "passwordHash": "88cb34ed6cac35d9575a06d91cdfc370:732d8a23d3bc76c4d4437a48a8778f20215b70f1d243b7cd355bf4b042a7367a0638ddba26cb458bcbb40694f1f1440a1488bd7603feb14b3a25214a9a444dae",
+      "isMaster": true,
+      "sections": [
+        "*"
+      ],
+      "active": true,
+      "criadoEm": "2026-10-26T13:42:46.776Z"
     }
   ]
 }
