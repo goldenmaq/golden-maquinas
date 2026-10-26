@@ -1817,10 +1817,11 @@ async function uploadAnexo(file){
 }
 function anexoChipHtml(a, removivel){
   return `<span class="anexo-chip" style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:14px;padding:3px 10px;font-size:12px;margin:3px 4px 0 0">
-    <a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${tipoIconeAnexo(a.contentType)} ${esc(a.nome||'arquivo')}</a>
+    <a href="${esc(a.url)}" target="_blank" rel="noopener" onclick="return abrirAnexo(event,this.href)" style="color:inherit;text-decoration:none">${tipoIconeAnexo(a.contentType)} ${esc(a.nome||'arquivo')}</a>
     ${removivel? `<button type="button" class="anexo-rm" data-anexorm="${esc(a.id)}" style="border:none;background:none;cursor:pointer;color:var(--danger);font-weight:700;padding:0 2px">✕</button>`:''}
   </span>`;
 }
+function abrirAnexo(ev,url){ if(!url || !url.startsWith('data:')) return true; ev.preventDefault(); fetch(url).then(r=>r.blob()).then(blob=>{ const objUrl=URL.createObjectURL(blob); window.open(objUrl,'_blank','noopener'); setTimeout(()=>URL.revokeObjectURL(objUrl),60000); }).catch(e=>{ console.error('abrirAnexo',e); toast('Nao foi possivel abrir o arquivo.'); }); return false; }
 
 /* ================= CHAT / SUPORTE TÉCNICO ================= */
 // Thread único por registro (Ata, Proposta ou OC) — para que a conversa com o suporte técnico/cotações
