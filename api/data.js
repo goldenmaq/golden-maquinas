@@ -70,7 +70,13 @@ async function get(req, res) {
         res.status(200).json({ doc: { id: rows[0].doc_id, data: rows[0].data } });
         return;
     }
-    const rows = await db`SELECT doc_id, data FROM docs WHERE collection = ${collection} ORDER BY path ASC`;
+    // No catálogo, 'anexos' (fotos/PDFs em base64) pode ficar muito grande —
+    // em listagens (sem id) ele é omitido para não estourar o limite de
+    // resposta do banco; continua disponível ao buscar um item específico
+    // (com id), usado pelas telas de detalhe/edição do produto.
+    const rows = collection === 'catalogo'
+        ? await db`SELECT doc_id, (data - 'anexos') AS data FROM docs WHERE collection = ${collection} ORDER BY path ASC`
+        : await db`SELECT doc_id, data FROM docs WHERE collection = ${collection} ORDER BY path ASC`;
     res.status(200).json({ docs: rows.map((r) => ({ id: r.doc_id, data: r.data })) });
 }
 
