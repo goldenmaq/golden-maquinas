@@ -428,26 +428,14 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&am
    esses recursos não existem, então implementamos aqui versões equivalentes usando
    IndexedDB do próprio navegador — os dados ficam salvos de verdade neste dispositivo/navegador. */
 const LocalDB = (function(){
-  const DB_NAME = 'goldenmaq_sales_db', DB_VERSION = 1, STORE = 'docs';
-  let dbPromise = null;
-  function openDB(){
-    if(dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve, reject)=>{
-      try{
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = ()=>{
-          const idb = req.result;
-          if(!idb.objectStoreNames.contains(STORE)){
-            const store = idb.createObjectStore(STORE, {keyPath:'path'});
-            store.createIndex('collection', 'collection', {unique:false});
-          }
-        };
-        req.onsuccess = ()=> resolve(req.result);
-        req.onerror = ()=> reject(req.error);
-      }catch(e){ reject(e); }
-    });
-    return dbPromise;
-  }
+  /* Antes os dados ficavam só no IndexedDB deste navegador — cada usuário,
+     em cada computador, tinha sua própria cópia local, sem compartilhar nada
+     (por isso contas novas, ou o modo anônimo, viam tudo vazio). Agora os
+     dados passam pela API /api/data, que grava num banco Postgres
+     compartilhado: qualquer usuário autenticado, em qualquer navegador, lê e
+     grava os mesmos dados. O BroadcastChannel abaixo só sincroniza abas
+     abertas no mesmo navegador; entre dispositivos diferentes, os dados já
+     vêm atualizados a cada consulta nova à API. */
   const bc = (function(){ try{ return new BroadcastChannel('goldenmaq_db_sync'); }catch(e){ return null; } })();
   const listeners = {}; // collectionPath -> Set(cb)
   function notify(collectionPath){
@@ -457,14 +445,8 @@ const LocalDB = (function(){
   }
   if(bc) bc.onmessage = (ev)=>{ if(ev.data && ev.data.type==='changed'){ const set = listeners[ev.data.collection]; if(set) set.forEach(cb=> refreshListener(ev.data.collection, cb)); } };
   async function getAllInCollection(collectionPath){
-    const idb = await openDB();
-    return new Promise((resolve, reject)=>{
-      const tx = idb.transaction(STORE, 'readonly');
-      const idx = tx.objectStore(STORE).index('collection');
-      const req = idx.getAll(IDBKeyRange.only(collectionPath));
-      req.onsuccess = ()=> resolve(req.result||[]);
-      req.onerror = ()=> reject(req.error);
-    });
+    const r = await apiCall('/api/data?collection='+encodeURIComponent(collectionPath));
+    return (r.docs||[]).map(d=> ({ path: collectionPath+'/'+d.id, collection: collectionPath, id: d.id, data: d.data }));
   }
   async function refreshListener(collectionPath, cb){
     try{
@@ -473,30 +455,16 @@ const LocalDB = (function(){
     }catch(e){ console.error('LocalDB snapshot', e); }
   }
   async function putDoc(collectionPath, id, data){
-    const idb = await openDB();
-    await new Promise((resolve, reject)=>{
-      const tx = idb.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put({ path: collectionPath+'/'+id, collection: collectionPath, id, data });
-      tx.oncomplete = resolve; tx.onerror = ()=> reject(tx.error);
-    });
+    await apiCall('/api/data', {method:'PUT', body:{collection: collectionPath, id, data}});
     notify(collectionPath);
   }
   async function getDocRow(collectionPath, id){
-    const idb = await openDB();
-    return new Promise((resolve, reject)=>{
-      const tx = idb.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get(collectionPath+'/'+id);
-      req.onsuccess = ()=> resolve(req.result||null);
-      req.onerror = ()=> reject(req.error);
-    });
+    const r = await apiCall('/api/data?collection='+encodeURIComponent(collectionPath)+'&id='+encodeURIComponent(id));
+    if(!r.doc) return null;
+    return { path: collectionPath+'/'+id, collection: collectionPath, id: r.doc.id, data: r.doc.data };
   }
   async function deleteDoc(collectionPath, id){
-    const idb = await openDB();
-    await new Promise((resolve, reject)=>{
-      const tx = idb.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(collectionPath+'/'+id);
-      tx.oncomplete = resolve; tx.onerror = ()=> reject(tx.error);
-    });
+    await apiCall('/api/data?collection='+encodeURIComponent(collectionPath)+'&id='+encodeURIComponent(id), {method:'DELETE'});
     notify(collectionPath);
   }
   async function updateDoc(collectionPath, id, partial){
@@ -506,7 +474,7 @@ const LocalDB = (function(){
   }
   function collection(path){
     const api = {
-      limit(){ return api; }, // IndexedDB local — coleções já ficam pequenas, limite não é necessário
+      limit(){ return api; }, // paginação não é necessária nos volumes atuais
       async get(){
         const rows = await getAllInCollection(path);
         return { docs: rows.map(r=>({ id:r.id, data:()=> r.data })) };
@@ -530,6 +498,7 @@ const LocalDB = (function(){
   }
   return { collection };
 })();
+
 const LocalAssets = {
   async upload(file){
     const dataUrl = await new Promise((resolve, reject)=>{
