@@ -1184,9 +1184,11 @@ function abrirNovoProdutoModal(){
     closeModal(); toast('Produto cadastrado no catálogo.'); if(currentView()==='catalogo') renderCatalogo(document.getElementById('app'));
   };
 }
-function abrirEditarProdutoModal(id){
-  const c = CATALOGO.find(x=>x.id===id); if(!c){ toast('Produto não encontrado.'); return; }
+async function abrirEditarProdutoModal(id){
+  const base = CATALOGO.find(x=>x.id===id); if(!base){ toast('Produto não encontrado.'); return; }
   if(!canWrite){ toast('Você não tem autorização para editar o catálogo.'); return; }
+  let c = base;
+  if(db){ try{ const row = await db.collection('catalogo').doc(id).get(); if(row.exists) c = Object.assign({}, base, row.data()); }catch(e){} }
   openModal(`
     <h2 style="font-size:17px;margin-bottom:4px">Editar produto — ${esc(c.modelo)}</h2>
     <p class="hint" style="margin-bottom:12px">Alterações ficam registradas com seu nome e a data/hora, visíveis para toda a equipe.</p>
@@ -1516,8 +1518,10 @@ function ultimaEdicaoHtml(c){
   const u = h[h.length-1];
   return `<p class="hint" style="margin-top:8px">Última edição: <b>${esc(u.autor||'—')}</b> em ${u.data? new Date(u.data).toLocaleString('pt-BR') : ''}${h.length>1? ` · ${h.length} edições no total`:''}</p>`;
 }
-function abrirFichaModal(id){
-  const c = CATALOGO.find(x=>x.id===id); if(!c) return;
+async function abrirFichaModal(id){
+  const base = CATALOGO.find(x=>x.id===id); if(!base) return;
+  let c = base;
+  if(db){ try{ const row = await db.collection('catalogo').doc(id).get(); if(row.exists) c = Object.assign({}, base, row.data()); }catch(e){} }
   let specsHtml = '<p class="hint warn">Ficha técnica pendente de cadastro — não presuma especificações de outro modelo da mesma família.</p>';
   if(c.ficha_tecnica){
     specsHtml = `<div style="overflow-x:auto">${renderSpecTableHtml(c.ficha_tecnica)}</div>
