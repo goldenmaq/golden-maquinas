@@ -141,31 +141,45 @@
   .totals div{text-align:right}
   .totals b{font-family:var(--font-mono);font-size:19px}
   .doc-preview{display:flex;flex-direction:column;gap:22px}
-  .docpage{background:#fff;color:#1a222c;width:210mm;min-height:297mm;max-width:100%;box-sizing:border-box;margin:0 auto;padding:18mm 16mm 26mm;box-shadow:0 1px 4px rgba(0,0,0,.2);position:relative;font-size:13px;line-height:1.6;overflow:hidden}
+  .docpage{background:#fff;color:#1a222c;width:210mm;min-height:297mm;max-width:100%;box-sizing:border-box;margin:0 auto;padding:18mm 16mm 30mm;box-shadow:0 1px 4px rgba(0,0,0,.2);position:relative;font-size:13px;line-height:1.6}
   .docpage .dp-logo-wrap{text-align:center;margin-bottom:28px}
   .docpage .dp-logo-wrap img{height:116px}
-  .docpage h3.dp-h{font-size:13px;font-weight:700;margin:20px 0 8px;color:#16202e}
+  .docpage h3.dp-h{font-size:13px;font-weight:700;margin:20px 0 8px;color:#16202e;break-after:avoid-page;page-break-after:avoid}
   .docpage p{margin:0 0 10px}
-  .docpage .dp-foot{position:absolute;left:0;right:0;bottom:0;padding:14px 16mm 16px;border-top:3px solid var(--gold);display:flex;align-items:center;gap:6px;font-size:10.5px;color:#2f6fb3}
+  .docpage .dp-foot{position:absolute;left:0;right:0;bottom:0;padding:10px 16mm 12px;border-top:2px solid var(--gold);display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:10px;color:#2f6fb3}
+  .docpage .dp-foot .dp-pagenum{white-space:nowrap;color:#5a6472;font-variant-numeric:tabular-nums}
   .docpage table{font-size:12px;margin:10px 0}
   @media (max-width:860px){ .docpage{width:100%;min-height:0} }
   .spectable{width:100%;border-collapse:collapse;table-layout:fixed}
   .spectable td,.spectable th{border:1px solid #c7d0db;padding:6px 8px;text-align:center;vertical-align:middle;font-size:12.5px;line-height:1.35;overflow-wrap:break-word}
   .spectable td:first-child,.spectable th:first-child{text-align:left;width:36%}
   .spectable .unitcol{width:11%;white-space:nowrap;color:#5a6472;font-size:11px}
+  .spectable thead{display:table-header-group}
   .spectable thead th{background:#1a2f4a;color:#fff;font-weight:700}
   .spectable .sec td{background:#1a2f4a;color:#fff;font-weight:700;text-align:center}
   .spectable .lbl{background:#eef1f5;text-align:left;font-weight:600}
+  .spectable tr{break-inside:avoid;page-break-inside:avoid}
   .pricetable{width:100%;border-collapse:collapse}
+  .pricetable thead{display:table-header-group}
   .pricetable th{background:var(--navy);color:#fff;padding:8px 10px;text-align:left;font-weight:700}
   .pricetable td{padding:8px 10px;border-bottom:1px solid #dde3ea}
   .pricetable tr:nth-child(even) td{background:#f3f5f8}
+  .pricetable tr{break-inside:avoid;page-break-inside:avoid}
   .pricetable tfoot td{font-weight:700;border-top:2px solid var(--navy)}
   .checklist{list-style:none;padding:0;margin:8px 0 14px}
-  .checklist li{padding:4px 0 4px 24px;position:relative;font-weight:700}
+  .checklist li{padding:4px 0 4px 24px;position:relative;font-weight:700;break-inside:avoid;page-break-inside:avoid}
   .checklist li:before{content:'';position:absolute;left:0;top:7px;width:12px;height:12px;border:1.4px solid #333}
+  .dp-fotos{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:flex-start}
+  .dp-fotos img{max-width:260px;max-height:170px;object-fit:contain;border:1px solid #e1e6ec}
+  .dp-fotos.one img{max-width:280px;max-height:180px}
   @page{size:A4;margin:0}
-  @media print{ body *{visibility:hidden} .doc-preview,.doc-preview *{visibility:visible} .doc-preview{position:absolute;left:0;top:0;gap:0} .docpage{box-shadow:none;page-break-after:always;margin:0;max-width:none;width:210mm;min-height:297mm} }
+  @media print{
+    body *{visibility:hidden}
+    .doc-preview,.doc-preview *{visibility:visible}
+    .doc-preview{position:absolute;left:0;top:0;gap:0}
+    .docpage{box-shadow:none;break-after:page;page-break-after:always;margin:0;max-width:none;width:210mm;min-height:297mm}
+    .docpage:last-child{break-after:auto;page-break-after:auto}
+  }
   .empty{padding:40px 20px;text-align:center;color:var(--muted)}
   .empty b{display:block;color:var(--ink);font-family:var(--font-display);text-transform:uppercase;font-size:15px;margin-bottom:6px}
   .modal-backdrop{position:fixed;inset:0;background:rgba(8,16,30,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow:auto}
@@ -1104,10 +1118,16 @@ function abrirNovoProdutoModal(){
     <div class="field" style="margin-top:10px"><label>Descrição</label><textarea id="npDescricao" rows="2" placeholder="ex.: 2 estações, sistema servo..."></textarea></div>
     <div class="field" style="margin-top:10px"><label>Nota / alerta (opcional — ex.: preço negociado para cliente específico)</label><input id="npNota"></div>
     <div class="field" style="margin-top:10px">
-      <label>Fotos e documentos (opcional — imagem ou PDF, ex.: foto do equipamento, ficha técnica do fornecedor)</label>
-      <input type="file" id="npAnexoFile" accept="application/pdf,image/*" multiple style="display:none">
-      <button class="btn" id="npAnexoBtn" type="button" style="font-size:12px;padding:5px 9px">📎 Anexar imagem ou PDF</button>
-      <div id="npAnexosLista" style="margin-top:8px"></div>
+      <label>Fotos do equipamento (aparecem na proposta — pode cadastrar mais de uma, escolher quais exibir e a ordem)</label>
+      <input type="file" id="npFotoFile" accept="image/*" multiple style="display:none">
+      <button class="btn" id="npFotoBtn" type="button" style="font-size:12px;padding:5px 9px">📷 Adicionar foto</button>
+      <div id="npFotosLista" style="margin-top:8px"></div>
+    </div>
+    <div class="field" style="margin-top:10px">
+      <label>Outros documentos (opcional — ex.: ficha técnica do fornecedor em PDF)</label>
+      <input type="file" id="npDocFile" accept="application/pdf" multiple style="display:none">
+      <button class="btn" id="npDocBtn" type="button" style="font-size:12px;padding:5px 9px">📎 Anexar documento</button>
+      <div id="npDocsLista" style="margin-top:8px"></div>
     </div>
     <p class="hint" id="npTotalPreview" style="margin-top:10px"></p>
     <div style="margin-top:18px;display:flex;justify-content:flex-end;gap:8px">
@@ -1115,18 +1135,8 @@ function abrirNovoProdutoModal(){
       <button class="btn primary" id="btnSalvarProduto">Salvar produto</button>
     </div>`);
   let npAnexos = [];
-  const pintaNpAnexos = ()=>{
-    const box = document.getElementById('npAnexosLista'); if(!box) return;
-    box.innerHTML = npAnexos.length? npAnexos.map(a=> anexoChipHtml(a, true)).join('') : '<span class="hint">Nenhum arquivo ainda.</span>';
-    box.querySelectorAll('[data-anexorm]').forEach(b=> b.onclick = ()=>{ npAnexos = npAnexos.filter(x=>x.id!==b.dataset.anexorm); pintaNpAnexos(); });
-  };
-  pintaNpAnexos();
-  document.getElementById('npAnexoBtn').onclick = ()=> document.getElementById('npAnexoFile').click();
-  document.getElementById('npAnexoFile').addEventListener('change', async e=>{
-    const files = Array.from(e.target.files||[]); e.target.value=''; if(!files.length) return;
-    for(const file of files){ const a = await uploadAnexo(file); if(a) npAnexos.push(a); }
-    pintaNpAnexos();
-  });
+  construirGerenciadorFotos('np', ()=>npAnexos, v=>{ npAnexos=v; });
+  construirListaDocumentos('np', ()=>npAnexos, v=>{ npAnexos=v; });
   const atualizaPreview = ()=>{
     const fob = parseFloat(document.getElementById('npFob').value)||0;
     const serv = parseFloat(document.getElementById('npServ').value)||0;
@@ -1213,10 +1223,16 @@ async function abrirEditarProdutoModal(id){
     <div class="field" style="margin-top:10px"><label>Descrição</label><textarea id="epDescricao" rows="2">${esc(c.descricao||'')}</textarea></div>
     <div class="field" style="margin-top:10px"><label>Nota / alerta (opcional)</label><input id="epNota" value="${esc(c.nota||'')}"></div>
     <div class="field" style="margin-top:10px">
-      <label>Fotos e documentos</label>
-      <input type="file" id="epAnexoFile" accept="application/pdf,image/*" multiple style="display:none">
-      <button class="btn" id="epAnexoBtn" type="button" style="font-size:12px;padding:5px 9px">📎 Anexar imagem ou PDF</button>
-      <div id="epAnexosLista" style="margin-top:8px"></div>
+      <label>Fotos do equipamento (aparecem na proposta — pode cadastrar mais de uma, escolher quais exibir e a ordem)</label>
+      <input type="file" id="epFotoFile" accept="image/*" multiple style="display:none">
+      <button class="btn" id="epFotoBtn" type="button" style="font-size:12px;padding:5px 9px">📷 Adicionar foto</button>
+      <div id="epFotosLista" style="margin-top:8px"></div>
+    </div>
+    <div class="field" style="margin-top:10px">
+      <label>Outros documentos (opcional — ex.: ficha técnica do fornecedor em PDF)</label>
+      <input type="file" id="epDocFile" accept="application/pdf" multiple style="display:none">
+      <button class="btn" id="epDocBtn" type="button" style="font-size:12px;padding:5px 9px">📎 Anexar documento</button>
+      <div id="epDocsLista" style="margin-top:8px"></div>
     </div>
     <p class="hint" id="epTotalPreview" style="margin-top:10px"></p>
     ${ultimaEdicaoHtml(c)}
@@ -1225,18 +1241,8 @@ async function abrirEditarProdutoModal(id){
       <button class="btn primary" id="btnSalvarEdicaoProduto">Salvar alterações</button>
     </div>`);
   let epAnexos = (c.anexos||[]).slice();
-  const pintaEpAnexos = ()=>{
-    const box = document.getElementById('epAnexosLista'); if(!box) return;
-    box.innerHTML = epAnexos.length? epAnexos.map(a=> anexoChipHtml(a, true)).join('') : '<span class="hint">Nenhum arquivo ainda.</span>';
-    box.querySelectorAll('[data-anexorm]').forEach(b=> b.onclick = ()=>{ epAnexos = epAnexos.filter(x=>x.id!==b.dataset.anexorm); pintaEpAnexos(); });
-  };
-  pintaEpAnexos();
-  document.getElementById('epAnexoBtn').onclick = ()=> document.getElementById('epAnexoFile').click();
-  document.getElementById('epAnexoFile').addEventListener('change', async e=>{
-    const files = Array.from(e.target.files||[]); e.target.value=''; if(!files.length) return;
-    for(const file of files){ const a = await uploadAnexo(file); if(a) epAnexos.push(a); }
-    pintaEpAnexos();
-  });
+  construirGerenciadorFotos('ep', ()=>epAnexos, v=>{ epAnexos=v; });
+  construirListaDocumentos('ep', ()=>epAnexos, v=>{ epAnexos=v; });
   const atualizaPreviewEp = ()=>{
     const fob = parseFloat(document.getElementById('epFob').value)||0;
     const serv = parseFloat(document.getElementById('epServ').value)||0;
@@ -1529,11 +1535,11 @@ async function abrirFichaModal(id){
   } else if(c.descricao){
     specsHtml = `<p>${esc(c.descricao)}</p>`;
   }
-  const fotoC = fotoEquipamento(c);
+  const fotosC = fotosEquipamento(c);
   openModal(`
     <h2 style="font-size:17px;margin-bottom:4px">${badgeLinhaHtml(c)}${esc(c.modelo)}</h2>
     <p class="hint" style="margin-bottom:14px">${esc(c.linha||'')} ${c.categoria?'· '+esc(c.categoria):''}</p>
-    ${fotoC? `<div style="text-align:center;margin-bottom:14px"><img src="${fotoC}" style="max-width:100%;max-height:160px;object-fit:contain"><p class="hint" style="font-size:10.5px">Foto meramente ilustrativa.</p></div>`:''}
+    ${fotosC.length? `<div style="text-align:center;margin-bottom:14px">${fotosC.map(u=>`<img src="${esc(u)}" style="max-width:100%;max-height:160px;object-fit:contain;margin:0 4px">`).join('')}<p class="hint" style="font-size:10.5px">Foto${fotosC.length>1?'s':''} meramente ilustrativa${fotosC.length>1?'s':''}.</p></div>`:''}
     ${c.nota? `<p class="hint warn" style="margin-bottom:14px">⚠ ${esc(c.nota)}</p>`:''}
     <div class="grid cols-3" style="margin-bottom:16px">
       <div><span class="hint">FOB referência</span><div class="mono" style="font-size:16px">${fmtUSD(c.fob)}</div></div>
@@ -1795,6 +1801,71 @@ function anexoChipHtml(a, removivel){
   </span>`;
 }
 function abrirAnexo(ev,url){ if(!url || !url.startsWith('data:')) return true; ev.preventDefault(); fetch(url).then(r=>r.blob()).then(blob=>{ const objUrl=URL.createObjectURL(blob); window.open(objUrl,'_blank','noopener'); setTimeout(()=>URL.revokeObjectURL(objUrl),60000); }).catch(e=>{ console.error('abrirAnexo',e); toast('Nao foi possivel abrir o arquivo.'); }); return false; }
+function ehImagemAnexo(a){ return (a.contentType||'').startsWith('image/'); }
+/* -- gerenciador de fotos do catálogo: várias fotos por modelo, com controle de quais aparecem
+      na proposta e em que ordem. Usado tanto no cadastro quanto na edição de produto (prefix
+      'np'/'ep'). getList/setList leem e gravam no array de anexos (mesmo array que guarda os
+      PDFs/documentos) mantido no closure do modal que chama esta função. -- */
+function construirGerenciadorFotos(prefix, getList, setList){
+  const fileInputId = prefix+'FotoFile', btnId = prefix+'FotoBtn', listaId = prefix+'FotosLista';
+  const pinta = ()=>{
+    const el = document.getElementById(listaId); if(!el) return;
+    const imgs = getList().filter(ehImagemAnexo);
+    if(!imgs.length){ el.innerHTML = '<p class="hint">Nenhuma foto cadastrada ainda — adicione ao menos uma para que apareça na proposta (nunca usamos foto genérica de outro modelo).</p>'; return; }
+    el.innerHTML = imgs.map((a,idx)=>`
+      <div class="card pad" style="display:flex;align-items:center;gap:10px;padding:8px;margin-bottom:6px">
+        <img src="${esc(a.url)}" style="width:56px;height:56px;object-fit:cover;border-radius:4px;border:1px solid var(--border);flex-shrink:0">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.nome||'foto')}</div>
+          <label style="font-size:11px;display:flex;align-items:center;gap:4px;margin-top:3px;cursor:pointer"><input type="checkbox" data-fotoinc="${esc(a.id)}" ${a.incluirProposta!==false?'checked':''}> Exibir na proposta</label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button type="button" class="btn ghost" data-fotoup="${esc(a.id)}" title="Mover para cima" style="padding:1px 7px;font-size:11px;line-height:1.4" ${idx===0?'disabled':''}>▲</button>
+          <button type="button" class="btn ghost" data-fotodown="${esc(a.id)}" title="Mover para baixo" style="padding:1px 7px;font-size:11px;line-height:1.4" ${idx===imgs.length-1?'disabled':''}>▼</button>
+        </div>
+        <button type="button" class="btn ghost" data-fotorm="${esc(a.id)}" title="Excluir" style="padding:4px 8px;color:var(--danger)">✕</button>
+      </div>`).join('');
+    el.querySelectorAll('[data-fotoinc]').forEach(cb=> cb.onchange = e=>{
+      const item = getList().find(x=>x.id===cb.dataset.fotoinc); if(item) item.incluirProposta = e.target.checked;
+    });
+    el.querySelectorAll('[data-fotorm]').forEach(b=> b.onclick = ()=>{ setList(getList().filter(x=>x.id!==b.dataset.fotorm)); pinta(); });
+    el.querySelectorAll('[data-fotoup]').forEach(b=> b.onclick = ()=> mover(b.dataset.fotoup,-1));
+    el.querySelectorAll('[data-fotodown]').forEach(b=> b.onclick = ()=> mover(b.dataset.fotodown,1));
+  };
+  const mover = (id,dir)=>{
+    const full = getList().slice();
+    const imgs = full.filter(ehImagemAnexo);
+    const i = imgs.findIndex(a=>a.id===id); if(i<0) return;
+    const j = i+dir; if(j<0||j>=imgs.length) return;
+    const idxA = full.indexOf(imgs[i]), idxB = full.indexOf(imgs[j]);
+    [full[idxA], full[idxB]] = [full[idxB], full[idxA]];
+    setList(full); pinta();
+  };
+  document.getElementById(btnId).onclick = ()=> document.getElementById(fileInputId).click();
+  document.getElementById(fileInputId).addEventListener('change', async e=>{
+    const files = Array.from(e.target.files||[]); e.target.value=''; if(!files.length) return;
+    for(const file of files){ const a = await uploadAnexo(file); if(a) setList(getList().concat([{...a, incluirProposta:true}])); }
+    pinta();
+  });
+  pinta();
+}
+/* -- lista simples de documentos (PDFs) anexados ao produto do catálogo, separada das fotos -- */
+function construirListaDocumentos(prefix, getList, setList){
+  const fileInputId = prefix+'DocFile', btnId = prefix+'DocBtn', listaId = prefix+'DocsLista';
+  const pinta = ()=>{
+    const el = document.getElementById(listaId); if(!el) return;
+    const docs = getList().filter(a=>!ehImagemAnexo(a));
+    el.innerHTML = docs.length? docs.map(a=> anexoChipHtml(a, true)).join('') : '<span class="hint">Nenhum documento ainda.</span>';
+    el.querySelectorAll('[data-anexorm]').forEach(b=> b.onclick = ()=>{ setList(getList().filter(x=>x.id!==b.dataset.anexorm)); pinta(); });
+  };
+  document.getElementById(btnId).onclick = ()=> document.getElementById(fileInputId).click();
+  document.getElementById(fileInputId).addEventListener('change', async e=>{
+    const files = Array.from(e.target.files||[]); e.target.value=''; if(!files.length) return;
+    for(const file of files){ const a = await uploadAnexo(file); if(a) setList(getList().concat([a])); }
+    pinta();
+  });
+  pinta();
+}
 
 /* ================= CHAT / SUPORTE TÉCNICO ================= */
 // Thread único por registro (Ata, Proposta ou OC) — para que a conversa com o suporte técnico/cotações
@@ -2338,7 +2409,10 @@ function stepCliente(body){
           </select>
           ${repOutroModo ? `<input id="wRepOutro" style="margin-top:6px" value="${esc(draft.representante)}" placeholder="Nome do representante">` : ''}
         </div>
-        <div class="field"><label>Data</label><input value="${esc(draft.dataBR)}" disabled></div>
+        <div class="field"><label>Número da proposta</label><input id="wNumero" value="${esc(draft.numero)}">
+          ${draft._origNumero? `<p class="hint" style="margin-top:4px">Alterar o número move o registro salvo (${esc(draft._origNumero)} → novo número) ao salvar.</p>`:''}
+        </div>
+        <div class="field"><label>Data</label><input id="wData" type="date" value="${esc(draft.dataISO||todayISO())}"></div>
       </div>
       ${draft.cliente? `
         <div class="card pad" style="background:var(--surface-2);margin-bottom:12px">
@@ -2367,6 +2441,17 @@ function stepCliente(body){
   };
   const outroEl = document.getElementById('wRepOutro');
   if(outroEl) outroEl.oninput = e=> draft.representante = e.target.value;
+  document.getElementById('wNumero').oninput = e=> draft.numero = e.target.value;
+  document.getElementById('wNumero').onblur = e=>{
+    const v = e.target.value.trim();
+    if(!v){ draft.numero = draft._origNumero || novoNumeroProposta(); e.target.value = draft.numero; return; }
+    const emUso = PROPOSTAS.some(p=> p.numero===v && p.numero!==draft._origNumero);
+    if(emUso){ toast('Já existe uma proposta com este número — escolha outro.'); draft.numero = draft._origNumero || novoNumeroProposta(); e.target.value = draft.numero; }
+  };
+  document.getElementById('wData').oninput = e=>{
+    draft.dataISO = e.target.value;
+    draft.dataBR = e.target.value? new Date(e.target.value+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'}) : todayBR();
+  };
   if(draft.cliente){
     document.getElementById('btnTrocarCliente').onclick = ()=>{ draft.cliente=null; paintWizStep(); };
     document.getElementById('wContatoTit').onchange = e=> draft.contato.titulo = e.target.value;
@@ -2486,6 +2571,8 @@ function paintSelecionados(){
       </div>
       <div class="field" style="margin-top:8px"><label>Observações</label><input value="${esc(it.observacao)}" data-obs="${it.uid}"></div>
     </div>`;
+    const catAssociado = CATALOGO.find(x=>x.id===it.catalogId);
+    const semFotoCatalogo = !fotosEquipamento(catAssociado).length;
     return `
     <div class="card pad" style="margin-bottom:10px;background:var(--surface-2)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -2500,12 +2587,34 @@ function paintSelecionados(){
       ${it.tipo==='injetora' ? `<div class="field" style="margin-top:8px"><label>Material a ser processado (opcional)</label><input value="${esc(it.materialProcessado||'')}" data-matproc="${it.uid}" placeholder="ex.: Nylon, PVC flexível, material com fibra de vidro..."></div>` : ''}
       ${it.tipo==='injetora' ? sugestaoHtml(it) : ''}
       ${it.tipo==='injetora' ? blocoRoscaBimetalicaItem(it) : ''}
+      ${semFotoCatalogo ? `<div class="field" style="margin-top:8px">
+        <label class="hint warn">⚠ Este modelo não tem foto cadastrada no catálogo — sem foto própria, a proposta mostra apenas um esboço ilustrativo. Anexe uma foto só para esta proposta (opcional):</label>
+        <input type="file" id="itFotoFile_${it.uid}" accept="image/*" multiple style="display:none">
+        <button class="btn" type="button" data-itfotobtn="${it.uid}" style="font-size:12px;padding:5px 9px;margin-top:4px">📷 Anexar foto para esta proposta</button>
+        <div id="itFotosLista_${it.uid}" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>` : ''}
     </div>`;
   }).join('');
   el.querySelectorAll('[data-rm]').forEach(b=> b.onclick=()=>{ draft.itens = draft.itens.filter(i=>i.uid!==b.dataset.rm); paintSelecionados(); const nx=document.getElementById('btnStep2Next'); if(nx) nx.disabled = !draft.itens.length; });
   el.querySelectorAll('[data-qtd]').forEach(i=> i.oninput = e=>{ const it=draft.itens.find(x=>x.uid===i.dataset.qtd); it.qtd = Math.max(1, parseInt(e.target.value)||1); paintEqTotalPreview(); });
   el.querySelectorAll('[data-var]').forEach(s=> s.onchange = e=>{ const it=draft.itens.find(x=>x.uid===s.dataset.var); it.variante = e.target.value; });
   el.querySelectorAll('[data-obs]').forEach(i=> i.oninput = e=>{ const it=draft.itens.find(x=>x.uid===i.dataset.obs); it.observacao = e.target.value; });
+  el.querySelectorAll('[data-itfotobtn]').forEach(b=> b.onclick = ()=> document.getElementById('itFotoFile_'+b.dataset.itfotobtn).click());
+  draft.itens.forEach(it=>{
+    const fileEl = document.getElementById('itFotoFile_'+it.uid); if(!fileEl) return;
+    const pintaItFotos = ()=>{
+      const box = document.getElementById('itFotosLista_'+it.uid); if(!box) return;
+      box.innerHTML = (it.fotosProposta||[]).map(a=>`<span style="display:inline-flex;align-items:center;gap:4px"><img src="${esc(a.url)}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"><button type="button" data-itfotorm="${esc(a.id)}" data-itfotouid="${it.uid}" style="border:none;background:none;cursor:pointer;color:var(--danger);font-weight:700">✕</button></span>`).join('');
+      box.querySelectorAll('[data-itfotorm]').forEach(rb=> rb.onclick = ()=>{ it.fotosProposta = (it.fotosProposta||[]).filter(a=>a.id!==rb.dataset.itfotorm); pintaItFotos(); });
+    };
+    fileEl.addEventListener('change', async e=>{
+      const files = Array.from(e.target.files||[]); e.target.value=''; if(!files.length) return;
+      it.fotosProposta = it.fotosProposta||[];
+      for(const file of files){ const a = await uploadAnexo(file); if(a) it.fotosProposta.push(a); }
+      pintaItFotos();
+    });
+    pintaItFotos();
+  });
   el.querySelectorAll('[data-matproc]').forEach(i=> i.oninput = e=>{
     const it=draft.itens.find(x=>x.uid===i.dataset.matproc); it.materialProcessado = e.target.value;
     const box=document.getElementById('roscaBimet_'+it.uid);
@@ -2648,13 +2757,14 @@ function stepPrecificacao(body){
         <div class="field"><label>Serviços Brasil — parcelamento máx. (meses)</label><input id="cServParcelasMax" type="number" min="1" max="24" value="${draft.condicoes.servicosBrasilParcelasMax}"></div>
         <div class="field"><label>Serviços Brasil — observação de parcelamento</label><input id="cServParcelasObs" value="${esc(draft.condicoes.servicosBrasilParcelasObs)}" placeholder="ex.: via boleto/cartão, a combinar com financeiro"></div>
       </div>
-      <p class="hint" style="margin-top:4px">Câmbio padrão 30/70; Serviços Brasil financiável em até 24x — ajuste os campos acima caso a negociação seja diferente.</p>
+      <p class="hint" style="margin-top:4px">Serviços Brasil financiável em até 24x — ajuste os campos acima caso a negociação seja diferente. O % de câmbio no pedido/embarque acima <b>não aparece mais na proposta</b> (para não duplicar as parcelas abaixo) — ele é usado só na cláusula de Fechamento de Câmbio do Contrato/Ordem de Compra, quando gerados a partir desta proposta.</p>
       <div class="field" style="margin-top:12px"><label>Garantia</label><textarea id="cGarantia" rows="2">${esc(draft.condicoes.garantia)}</textarea></div>
       <div class="field" style="margin-top:10px"><label>Instalação</label><textarea id="cInstal" rows="2">${esc(draft.condicoes.instalacao)}</textarea></div>
       <div class="field" style="margin-top:10px"><label>Observações contratuais</label><textarea id="cObs" rows="2" placeholder="particularidades do cliente, se houver...">${esc(draft.condicoes.observacoes)}</textarea></div>
     </div>
     <div class="card pad" style="margin-bottom:16px">
       <h3 style="font-size:13px;color:var(--muted);margin-bottom:10px">Condições de pagamento</h3>
+      <p class="hint" style="margin-bottom:8px">Esta é a única lista de parcelas que aparece na proposta — edite livremente (descrição, % e quantidade de parcelas).</p>
       <div id="pagamentoLinhas"></div>
       <button class="btn" id="btnAddParcela" style="margin-top:8px">+ Adicionar parcela</button>
       <p class="hint" id="pagamentoSoma" style="margin-top:8px"></p>
@@ -2684,7 +2794,11 @@ function stepPrecificacao(body){
     paintPagamentoLinhas();
   });
   document.getElementById('btnStep3Back').onclick = ()=>{ draft.step=2; paintWizStep2Refresh(); };
-  document.getElementById('btnStep3Next').onclick = ()=>{ draft.step=4; paintWizStep2Refresh(); };
+  document.getElementById('btnStep3Next').onclick = ()=>{
+    const soma = draft.pagamento.reduce((s,p)=>s+(p.pct||0),0);
+    if(!draft.pagamento.length || Math.round(soma*100)/100 !== 100){ toast(`As parcelas de pagamento somam ${soma}% — ajuste para somar exatamente 100% antes de gerar a proposta.`); return; }
+    draft.step=4; paintWizStep2Refresh();
+  };
 }
 function paintItensPrecificacao(){
   const el = document.getElementById('itensPrecificacao'); if(!el) return;
@@ -2745,24 +2859,36 @@ function paintPagamentoSoma(){
 
 /* -- step 4: revisão -- */
 function dpFoot(){
-  return `<div class="dp-foot">📍 Rua Pinheiro Machado, 700 – Bairro Centro, Caxias do Sul</div>`;
+  // o "{{PAGENUM}}" é trocado por "Página X de N" depois que todas as páginas do documento
+  // já foram montadas (numerarPaginas) — assim cada página sabe sua posição real no total.
+  return `<div class="dp-foot"><span>📍 Rua Pinheiro Machado, 700 – Bairro Centro, Caxias do Sul</span><span class="dp-pagenum">{{PAGENUM}}</span></div>`;
 }
 function dpHead(){
   return `<div class="dp-logo-wrap"><img src="${document.getElementById('logoImg').src}" alt="Goldenmaq"></div>`;
 }
-const FOTOS_EQUIP = {
-  esteira: location.origin + '/assets/foto-esteira.jpg',
-  robo: location.origin + '/assets/foto-robo.jpg',
-  injetoraGold: location.origin + '/assets/foto-injetora-gold.jpg',
-  injetoraSilver: location.origin + '/assets/foto-injetora-silver.jpg',
-};
-function fotoEquipamento(c){
-  if(c.foto) return c.foto;
-  if(c.tipo==='esteira') return FOTOS_EQUIP.esteira;
-  if(c.tipo==='robo') return FOTOS_EQUIP.robo;
-  if(c.tipo==='injetora' && c.linha==='Gold') return FOTOS_EQUIP.injetoraGold;
-  if(c.tipo==='injetora' && c.linha==='Silver') return FOTOS_EQUIP.injetoraSilver;
-  return null;
+function numerarPaginas(pages){
+  return pages.map((html,i)=> html.replace('{{PAGENUM}}', `Página ${i+1} de ${pages.length}`));
+}
+// IMPORTANTE: nunca usar foto de estoque genérica ou de outro modelo — se o modelo não tem foto
+// própria cadastrada, a proposta deve mostrar o esboço ilustrativo (svgMachineSketch) em vez de
+// uma foto real que pode não corresponder ao equipamento efetivamente vendido.
+function fotosEquipamento(c){
+  if(!c) return [];
+  const imgs = (c.anexos||[]).filter(a=> ehImagemAnexo(a) && a.incluirProposta!==false);
+  if(imgs.length) return imgs.map(a=>a.url);
+  if(c.foto) return [c.foto]; // compatibilidade com cadastros antigos que só tinham uma foto única
+  return [];
+}
+function fotoEquipamento(c){ const f = fotosEquipamento(c); return f.length? f[0] : null; }
+/* fotos a usar para este item específico da proposta: primeiro as fotos avulsas anexadas só para
+   esta proposta (quando o modelo não tinha foto cadastrada no catálogo), senão as do catálogo. */
+function fotosParaItemProposta(it, c){
+  if(it && it.fotosProposta && it.fotosProposta.length) return it.fotosProposta.map(a=>a.url);
+  return fotosEquipamento(c);
+}
+function fotosHtml(urls){
+  if(!urls || !urls.length) return '';
+  return `<div class="dp-fotos${urls.length===1?' one':''}">${urls.map(u=>`<img src="${esc(u)}">`).join('')}</div>`;
 }
 function svgMachineSketch(tipo){
   const stroke = '#1a2f4a';
@@ -2869,16 +2995,17 @@ function buildDocPages(){
     if(it.tipo==='molde') return;
     const c = CATALOGO.find(x=>x.id===it.catalogId);
     if(!c || jaMostrado.has(c.id)) return;
-    if(!c.ficha_tecnica && !c.descricao) return;
+    const fotosIt = fotosParaItemProposta(it, c);
+    if(!c.ficha_tecnica && !c.descricao && !fotosIt.length) return;
     jaMostrado.add(c.id);
     pages.push(`<div class="docpage">
       ${dpHead()}
       <p><b>ESPECIFICAÇÕES TÉCNICAS DA ${esc(c.modelo).toUpperCase()}</b></p>
       <div style="text-align:center;margin:6px 0 16px">
-        ${fotoEquipamento(c) ? `<img src="${fotoEquipamento(c)}" style="max-width:280px;max-height:180px;object-fit:contain">` : svgMachineSketch(c.tipo)}
-        <p class="hint" style="font-size:10.5px;margin-top:4px">${fotoEquipamento(c) ? 'Foto meramente ilustrativa — não representa necessariamente a cor, acabamento ou configuração exata do equipamento contratado.' : 'Esboço ilustrativo do tipo de equipamento — não representa o design final de fábrica.'}</p>
+        ${fotosIt.length ? fotosHtml(fotosIt) : svgMachineSketch(c.tipo)}
+        <p class="hint" style="font-size:10.5px;margin-top:4px">${fotosIt.length ? 'Foto'+(fotosIt.length>1?'s':'')+' meramente ilustrativa'+(fotosIt.length>1?'s':'')+' — não representa'+(fotosIt.length>1?'m':'')+' necessariamente a cor, acabamento ou configuração exata do equipamento contratado.' : 'Esboço ilustrativo do tipo de equipamento — não representa o design final de fábrica.'}</p>
       </div>
-      ${c.ficha_tecnica? `<div style="overflow-x:auto">${renderSpecTableHtml(c.ficha_tecnica)}</div>` : `<p>${esc(c.descricao)}</p>`}
+      ${c.ficha_tecnica? renderSpecTableHtml(c.ficha_tecnica) : (c.descricao?`<p>${esc(c.descricao)}</p>`:'')}
       <p class="hint" style="font-style:italic;margin-top:10px">As especificações técnicas e a configuração final deverão ser confirmadas pelo fabricante antes da emissão do pedido.</p>
       ${dpFoot()}
     </div>`);
@@ -2909,8 +3036,13 @@ function buildDocPages(){
     <tfoot><tr><td><b>TOTAL GERAL</b></td><td><b>${String(draft.itens.reduce((s,i)=>s+i.qtd,0)).padStart(2,'0')}</b></td><td><b>${fmtUSD(t.total)}</b></td></tr></tfoot></table>
     <p class="hint" style="margin-top:12px"><b>OBS.:</b> ${esc(OBS_FOB)}</p>
     <h3 class="dp-h">Modalidade de pagamento:</h3>
-    <p><b>Fechamento de Câmbio ${esc(draft.condicoes.incoterm||'FOB')}:</b> ${fmtUSD(t.total)}<br>
-    ${draft.condicoes.cambioPedidoPct}% no pedido (${fmtUSD(t.total*draft.condicoes.cambioPedidoPct/100)}) · ${draft.condicoes.cambioEmbarquePct}% no embarque (${fmtUSD(t.total*draft.condicoes.cambioEmbarquePct/100)})</p>
+    <p><b>Fechamento de Câmbio ${esc(draft.condicoes.incoterm||'FOB')}:</b> ${fmtUSD(t.total)}</p>
+    <!-- Antes aqui também aparecia "${0}% no pedido / ${0}% no embarque" calculado a partir de
+         draft.condicoes.cambioPedidoPct/cambioEmbarquePct — isso duplicava exatamente os mesmos
+         valores que já aparecem logo abaixo, vindos de draft.pagamento (a lista de parcelas,
+         que é a fonte única e editável das condições de pagamento desta proposta). Os campos
+         cambioPedidoPct/cambioEmbarquePct continuam existindo e editáveis na etapa 3 — eles
+         agora servem só para a cláusula de "Fechamento de Câmbio" do Contrato/Ordem de Compra. -->
     ${pagamentoLinhas}
     ${t.serv>0 ? `<p style="margin-top:6px"><b>Serviços Brasil (${fmtUSD(t.serv)}):</b> parcelável em até ${draft.condicoes.servicosBrasilParcelasMax}x${draft.condicoes.servicosBrasilParcelasObs? ', '+esc(draft.condicoes.servicosBrasilParcelasObs):''} — condição sujeita a confirmação com o financeiro.</p>`:''}
     <h3 class="dp-h">Prazos e logística:</h3>
@@ -2941,7 +3073,7 @@ function buildDocPages(){
     ${dpFoot()}
   </div>`);
 
-  return pages;
+  return numerarPaginas(pages);
 }
 function stepRevisao(body){
   const pages = buildDocPages();
@@ -2951,15 +3083,17 @@ function stepRevisao(body){
       <button class="btn" id="btnStep4Back">← Voltar</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="wStatus">${['Rascunho','Aguardando aprovação','Enviada','Em negociação','Aprovada','Perdida','Cancelada'].map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select>
+        <button class="btn gold" id="btnBaixarPdf">📄 Baixar PDF</button>
         <button class="btn" id="btnBaixarHtml">Baixar documento (.html)</button>
         <button class="btn gold" id="btnSalvarProposta">Salvar proposta</button>
       </div>
     </div>
-    <p class="hint" style="margin-top:10px">O documento acima já segue o padrão Goldenmaq (modelo Alpargatas). Baixe o .html e abra no navegador para imprimir/salvar como PDF — cada bloco vira uma página.</p>`;
+    <p class="hint" style="margin-top:10px">O documento acima já segue o padrão Goldenmaq (formato A4, cabeçalho/rodapé e numeração em todas as páginas). Clique em "Baixar PDF" e, na caixa de impressão, escolha "Salvar como PDF" — pronto para imprimir ou enviar por e-mail/WhatsApp.</p>`;
   document.getElementById('btnStep4Back').onclick = ()=>{ draft.step=3; paintWizStep2Refresh(); };
   document.getElementById('wStatus').onchange = e=> draft.status = e.target.value;
   document.getElementById('btnSalvarProposta').onclick = salvarProposta;
   document.getElementById('btnBaixarHtml').onclick = baixarDocumentoHtml;
+  document.getElementById('btnBaixarPdf').onclick = ()=> window.print();
 }
 
 async function salvarProposta(){
@@ -2974,12 +3108,30 @@ async function salvarProposta(){
   return salvarPropostaRegistro({ valorTotalUSD: t.total, valorFobUSD: t.fob, valorServicosUSD: t.serv });
 }
 async function salvarPropostaRegistro(extra){
+  if(!draft.numero || !draft.numero.trim()){ toast('Informe o número da proposta antes de salvar.'); return; }
+  const origNumero = draft._origNumero;
+  const numeroMudou = origNumero && origNumero!==draft.numero;
+  if(PROPOSTAS.some(p=> p.numero===draft.numero && p.numero!==origNumero)){
+    toast(`Já existe uma proposta com o número ${draft.numero} — ajuste o número na etapa 1 antes de salvar.`); return;
+  }
   const registro = { ...draft, ...extra, atualizadoEm: new Date().toISOString() };
   delete registro.step;
+  delete registro._origNumero;
   if(db && canWrite){
-    try{ await db.collection('propostas').doc(docIdFromNumero(registro.numero)).set(registro); toast('Proposta salva.'); }
+    try{
+      await db.collection('propostas').doc(docIdFromNumero(registro.numero)).set(registro);
+      if(numeroMudou){
+        // o número mudou durante a edição — move o registro: grava no novo id e remove o antigo,
+        // para não deixar duas cópias da mesma proposta (uma delas desatualizada) no banco.
+        try{ await db.collection('propostas').doc(docIdFromNumero(origNumero)).delete(); }
+        catch(e){ console.error(e); toast(`Proposta salva como ${registro.numero}, mas não foi possível remover o registro antigo (${origNumero}) — avise o suporte técnico.`); }
+      }
+      toast('Proposta salva.');
+    }
     catch(e){ console.error(e); toast('Não foi possível salvar no banco — verifique sua permissão de edição.'); }
   } else {
+    if(numeroMudou) PROPOSTAS = PROPOSTAS.filter(p=>p.numero!==origNumero);
+    PROPOSTAS = PROPOSTAS.filter(p=>p.numero!==registro.numero);
     PROPOSTAS.unshift(registro); toast('Proposta salva nesta sessão (sem conexão ao banco).');
   }
   draft = null; location.hash = 'propostas';
@@ -3169,7 +3321,7 @@ function buildDocPagesMolde(){
     <p style="margin-top:10px"><b>Validade da proposta:</b> ${esc(cm.validade)}</p>
     ${dpFoot()}
   </div>`);
-  return pages;
+  return numerarPaginas(pages);
 }
 function stepRevisaoMolde(body){
   const pages = buildDocPagesMolde();
@@ -3179,15 +3331,17 @@ function stepRevisaoMolde(body){
       <button class="btn" id="btnStep4BackM">← Voltar</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="wStatus">${['Rascunho','Aguardando aprovação','Enviada','Em negociação','Aprovada','Perdida','Cancelada'].map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select>
+        <button class="btn gold" id="btnBaixarPdf">📄 Baixar PDF</button>
         <button class="btn" id="btnBaixarHtml">Baixar documento (.html)</button>
         <button class="btn gold" id="btnSalvarProposta">Salvar proposta</button>
       </div>
     </div>
-    <p class="hint" style="margin-top:10px">Baixe o .html e abra no navegador para imprimir/salvar como PDF.</p>`;
+    <p class="hint" style="margin-top:10px">Clique em "Baixar PDF" e, na caixa de impressão, escolha "Salvar como PDF".</p>`;
   document.getElementById('btnStep4BackM').onclick = ()=>{ draft.step=3; paintWizStep2Refresh(); };
   document.getElementById('wStatus').onchange = e=> draft.status = e.target.value;
   document.getElementById('btnSalvarProposta').onclick = salvarProposta;
   document.getElementById('btnBaixarHtml').onclick = baixarDocumentoHtml;
+  document.getElementById('btnBaixarPdf').onclick = ()=> window.print();
 }
 
 /* ================= PROPOSTAS (lista) ================= */
@@ -3252,6 +3406,7 @@ function renderPropostas(app){
     const original = PROPOSTAS.find(p=>p.numero===b.dataset.edit);
     draft = JSON.parse(JSON.stringify(original));
     draft.step = 1;
+    draft._origNumero = original.numero; // usado para mover/limpar o registro salvo se o número for alterado
     location.hash='nova'; if(currentView()==='nova') renderNovaProposta(document.getElementById('app'));
   });
   el.querySelectorAll('[data-del]').forEach(b=> b.onclick = ()=>{
@@ -5268,16 +5423,17 @@ function buildContratoPages(){
   (p.itens||[]).forEach(it=>{
     const c = CATALOGO.find(x=>x.id===it.catalogId);
     if(!c || jaMostrado.has(c.id)) return;
-    if(!c.ficha_tecnica && !c.descricao) return;
+    const fotosIt = fotosParaItemProposta(it, c);
+    if(!c.ficha_tecnica && !c.descricao && !fotosIt.length) return;
     jaMostrado.add(c.id);
     pages.push(`<div class="docpage">
       ${dpHead()}
       <h3 class="dp-h">ANEXO 01 – ESPECIFICAÇÕES TÉCNICAS — ${esc(c.modelo).toUpperCase()}</h3>
       <div style="text-align:center;margin:6px 0 16px">
-        ${fotoEquipamento(c) ? `<img src="${fotoEquipamento(c)}" style="max-width:260px;max-height:160px;object-fit:contain">` : svgMachineSketch(c.tipo)}
-        <p class="hint" style="font-size:10.5px;margin-top:4px">${fotoEquipamento(c) ? 'Foto meramente ilustrativa.' : 'Esboço ilustrativo do tipo de equipamento.'}</p>
+        ${fotosIt.length ? fotosHtml(fotosIt) : svgMachineSketch(c.tipo)}
+        <p class="hint" style="font-size:10.5px;margin-top:4px">${fotosIt.length ? 'Foto'+(fotosIt.length>1?'s':'')+' meramente ilustrativa'+(fotosIt.length>1?'s':'')+'.' : 'Esboço ilustrativo do tipo de equipamento.'}</p>
       </div>
-      ${c.ficha_tecnica? `<div style="overflow-x:auto">${renderSpecTableHtml(c.ficha_tecnica)}</div>` : `<p>${esc(c.descricao)}</p>`}
+      ${c.ficha_tecnica? renderSpecTableHtml(c.ficha_tecnica) : (c.descricao?`<p>${esc(c.descricao)}</p>`:'')}
       ${dpFoot()}
     </div>`);
   });
@@ -5286,7 +5442,7 @@ function buildContratoPages(){
   pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(CONTRATO_ANEXO03.titulo)}</h3>${renderParagrafosHtml(CONTRATO_ANEXO03.paragrafos)}${dpFoot()}</div>`);
   pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(CONTRATO_ANEXO04.titulo)}</h3>${renderParagrafosHtml(CONTRATO_ANEXO04.paragrafos)}${dpFoot()}</div>`);
 
-  return pages;
+  return numerarPaginas(pages);
 }
 function repintarDocContrato(){
   const el = document.getElementById('ctrDocPreview'); if(!el) return;
