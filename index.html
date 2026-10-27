@@ -2587,12 +2587,14 @@ function paintSelecionados(){
       ${it.tipo==='injetora' ? `<div class="field" style="margin-top:8px"><label>Material a ser processado (opcional)</label><input value="${esc(it.materialProcessado||'')}" data-matproc="${it.uid}" placeholder="ex.: Nylon, PVC flexível, material com fibra de vidro..."></div>` : ''}
       ${it.tipo==='injetora' ? sugestaoHtml(it) : ''}
       ${it.tipo==='injetora' ? blocoRoscaBimetalicaItem(it) : ''}
-      ${semFotoCatalogo ? `<div class="field" style="margin-top:8px">
-        <label class="hint warn">⚠ Este modelo não tem foto cadastrada no catálogo — sem foto própria, a proposta mostra apenas um esboço ilustrativo. Anexe uma foto só para esta proposta (opcional):</label>
+      <div class="field" style="margin-top:8px">
+        ${semFotoCatalogo
+          ? `<label class="hint warn">⚠ Este modelo não tem foto cadastrada no catálogo — sem foto própria, a proposta mostra apenas um esboço ilustrativo. Anexe uma foto só para esta proposta (opcional):</label>`
+          : `<label class="hint">Fotos desta proposta (opcional — se anexada, substitui as fotos do catálogo só nesta proposta):</label>`}
         <input type="file" id="itFotoFile_${it.uid}" accept="image/*" multiple style="display:none">
-        <button class="btn" type="button" data-itfotobtn="${it.uid}" style="font-size:12px;padding:5px 9px;margin-top:4px">📷 Anexar foto para esta proposta</button>
+        <button class="btn" type="button" data-itfotobtn="${it.uid}" style="font-size:12px;padding:5px 9px;margin-top:4px">📷 ${semFotoCatalogo ? 'Anexar foto para esta proposta' : 'Anexar/trocar foto só para esta proposta'}</button>
         <div id="itFotosLista_${it.uid}" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>
-      </div>` : ''}
+      </div>
     </div>`;
   }).join('');
   el.querySelectorAll('[data-rm]').forEach(b=> b.onclick=()=>{ draft.itens = draft.itens.filter(i=>i.uid!==b.dataset.rm); paintSelecionados(); const nx=document.getElementById('btnStep2Next'); if(nx) nx.disabled = !draft.itens.length; });
@@ -2869,6 +2871,109 @@ function dpHead(){
 function numerarPaginas(pages){
   return pages.map((html,i)=> html.replace('{{PAGENUM}}', `Página ${i+1} de ${pages.length}`));
 }
+/* ===== paginação automática dos documentos (proposta, molde, contrato) =====
+   Antes, cada seção (capa, ficha técnica, itens de série, preços, condições...) ocupava sempre
+   uma página .docpage própria. Quando uma seção era curta, sobrava muito espaço em branco; quando
+   era mais longa que uma página A4, o conteúdo simplesmente transbordava (texto cortado, rodapé
+   fora do lugar, título solto no fim da página). Agora o conteúdo de cada documento é montado como
+   uma lista de "blocos" (parágrafo, tabela, foto, título de seção...) e paginarBlocos() mede a
+   altura real de cada bloco — na mesma largura/fonte da página A4 final — e os distribui entre
+   páginas, preenchendo cada uma até o limite antes de quebrar. Só começa página nova quando o
+   conteúdo realmente não cabe mais, o que elimina espaços em branco grandes e páginas quase vazias.
+   Um bloco marcado com glueNext (ex.: título de seção) nunca fica sozinho no fim de uma página —
+   o empacotador tenta sempre trazer junto o conteúdo seguinte. */
+const DOC_MM_PX = 96/25.4;
+function dpMeasureBox(){
+  // usa a própria classe .docpage para herdar exatamente as mesmas regras (tamanho da logo,
+  // margens de título, estilo de tabela...) que valem na página real — só sobrescrevemos o que
+  // atrapalharia a medição (min-height:297mm da classe, padding vertical, sombra).
+  let box = document.getElementById('_dpMeasureBox');
+  if(!box){
+    box = document.createElement('div');
+    box.id = '_dpMeasureBox';
+    box.className = 'docpage';
+    box.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;min-height:0;box-shadow:none;margin:0;padding:0 16mm;box-sizing:border-box';
+    document.body.appendChild(box);
+  }
+  return box;
+}
+function dpFootHeightPx(){
+  const box = dpMeasureBox();
+  box.innerHTML = dpFoot();
+  const foot = box.firstElementChild;
+  const prevPos = foot.style.position; foot.style.position = 'static';
+  const h = foot.offsetHeight;
+  foot.style.position = prevPos;
+  return h;
+}
+function paginarBlocos(blocos){
+  if(!blocos.length) return [];
+  const box = dpMeasureBox();
+  box.innerHTML = dpHead();
+  const headH = box.offsetHeight;
+  const footH = dpFootHeightPx();
+  // 18mm de margem superior (igual ao padding-top real da .docpage) + 12mm de folga antes do
+  // rodapé, para o conteúdo nunca encostar nele.
+  const maxH = (297 - 18 - 12) * DOC_MM_PX - headH - footH;
+  const cabe = (html)=>{ box.innerHTML = html; return box.offsetHeight <= maxH; };
+  const paginas = [];
+  let atual = '', temConteudo = false;
+  for(let i=0;i<blocos.length;i++){
+    let b = blocos[i];
+    const candidato = atual + b.html;
+    if(temConteudo && !cabe(candidato)){
+      paginas.push(atual);
+      atual = b.html; temConteudo = true;
+    } else {
+      atual = candidato; temConteudo = true;
+    }
+    while(b.glueNext && i+1<blocos.length){
+      const comProximo = atual + blocos[i+1].html;
+      if(cabe(comProximo)){ atual = comProximo; i++; b = blocos[i]; }
+      else break;
+    }
+  }
+  if(temConteudo) paginas.push(atual);
+  return paginas;
+}
+function montarDocpages(blocos){
+  return paginarBlocos(blocos).map(html=> `<div class="docpage">${dpHead()}${html}${dpFoot()}</div>`);
+}
+/* divide uma tabela longa (ex.: lista fixa de itens de série) em blocos menores — cada um já é uma
+   tabela completa, com seu próprio cabeçalho, para poder começar sozinho numa página nova. Sem
+   isso, uma tabela com muitas linhas vira um único bloco "atômico" que pode ser mais alto que uma
+   página inteira e transbordar. */
+function dividirTabelaPorAltura(theadHtml, linhasHtml, classeTabela){
+  const montaTabela = linhas => `<table class="${classeTabela}">${theadHtml?`<thead>${theadHtml}</thead>`:''}<tbody>${linhas.join('')}</tbody></table>`;
+  if(linhasHtml.length<=1) return [{html:montaTabela(linhasHtml)}];
+  const box = dpMeasureBox();
+  box.innerHTML = montaTabela(linhasHtml);
+  const theadEl = box.querySelector('thead');
+  const theadH = theadEl ? theadEl.getBoundingClientRect().height : 0;
+  const trs = Array.from(box.querySelectorAll('tbody tr'));
+  const alturas = trs.map(tr=> tr.getBoundingClientRect().height);
+  const LIMITE_PX = 220; // bloco pequeno o bastante para o empacotador combinar vários numa mesma página
+  const grupos = []; let atual = [], atualH = theadH;
+  linhasHtml.forEach((html,i)=>{
+    if(atual.length && atualH + alturas[i] > LIMITE_PX){ grupos.push(atual); atual = []; atualH = theadH; }
+    atual.push(html); atualH += alturas[i];
+  });
+  if(atual.length) grupos.push(atual);
+  return grupos.map(linhas=>({html:montaTabela(linhas)}));
+}
+/* mesma ideia de dividirTabelaPorAltura, mas a partir do HTML já pronto de uma tabela (como o que
+   renderSpecTableHtml devolve) — usada para a ficha técnica, que pode ter muitas linhas quando o
+   equipamento tem várias variantes (colunas A/B/C). */
+function dividirTabelaHtmlPorAltura(tableHtml){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = tableHtml;
+  const table = tmp.querySelector('table');
+  if(!table) return [{html:tableHtml}];
+  const linhasHtml = Array.from(table.querySelectorAll('tbody > tr')).map(tr=>tr.outerHTML);
+  if(linhasHtml.length<=1) return [{html:tableHtml}];
+  const theadEl = table.querySelector('thead');
+  return dividirTabelaPorAltura(theadEl? theadEl.innerHTML : '', linhasHtml, table.className);
+}
 // IMPORTANTE: nunca usar foto de estoque genérica ou de outro modelo — se o modelo não tem foto
 // própria cadastrada, a proposta deve mostrar o esboço ilustrativo (svgMachineSketch) em vez de
 // uma foto real que pode não corresponder ao equipamento efetivamente vendido.
@@ -2948,15 +3053,14 @@ function svgMachineSketch(tipo){
 }
 function buildDocPages(){
   const t = calcTotais();
-  const pages = [];
+  const blocos = [];
   const clienteNome = (draft.cliente?.razao_social||draft.cliente?.nome_fantasia||'—').toUpperCase();
   const temGold = draft.itens.some(it=> String(it.linha||'').toLowerCase()==='gold');
 
-  /* página 1 — capa / apresentação */
+  /* capa / apresentação */
   let itensChecklist = '';
   draft.itens.forEach(it=>{ for(let i=0;i<it.qtd;i++) itensChecklist += `<li>${esc(labelEquipamento(it))}${it.variante?` (${esc(it.variante)})`:''}</li>`; });
-  pages.push(`<div class="docpage">
-    ${dpHead()}
+  blocos.push({html:`
     <p><b>PROPOSTA COMERCIAL - ${esc(draft.numero)}</b></p>
     <p>Caxias do Sul, ${esc(draft.dataBR)}.<br>REPRESENTANTE: ${esc((draft.representante||'—').toUpperCase())}</p>
     <p style="margin-top:18px"><b>À ${esc(clienteNome)}</b><br>
@@ -2967,29 +3071,21 @@ function buildDocPages(){
     <p>Apresentamos nossa proposta comercial para o fornecimento dos seguintes equipamentos:</p>
     <ul class="checklist">${itensChecklist}</ul>
     <p>A proposta reúne a configuração técnica, os valores, as condições de pagamento, a garantia e os prazos para avaliação.</p>
-    <p>Desde já, agradecemos a oportunidade de apresentação desta proposta.</p>
-    <h3 class="dp-h" style="font-style:italic">A GOLDEN MAQ</h3>
-    ${EMPRESA_SOBRE.map(p=>`<p>${esc(p)}</p>`).join('')}
-    ${dpFoot()}
-  </div>`);
+    <p>Desde já, agradecemos a oportunidade de apresentação desta proposta.</p>`});
+  blocos.push({html:`<h3 class="dp-h" style="font-style:italic">A GOLDEN MAQ</h3>`, glueNext:true});
+  EMPRESA_SOBRE.forEach(p=> blocos.push({html:`<p>${esc(p)}</p>`}));
 
-  /* páginas — moldes (sob medida, sem catálogo) */
+  /* moldes (sob medida, sem catálogo) */
   draft.itens.filter(it=>it.tipo==='molde' && it.moldeDescricao).forEach(it=>{
-    pages.push(`<div class="docpage">
-      ${dpHead()}
-      <p><b>ESPECIFICAÇÕES DO MOLDE</b></p>
+    blocos.push({html:`<p><b>ESPECIFICAÇÕES DO MOLDE</b></p>`, glueNext:true});
+    blocos.push({html:`
       <div style="text-align:center;margin:6px 0 16px">${svgMachineSketch('molde')}<p class="hint" style="font-size:10.5px;margin-top:4px">Esboço ilustrativo — não representa o desenho final do molde.</p></div>
-      <p style="margin-bottom:10px;font-weight:700">${esc(it.moldeDescricao)}</p>
-      <table class="spectable"><tbody>
-        ${it.moldeMaterial? `<tr><td class="lbl">Material</td><td>${esc(it.moldeMaterial)}</td></tr>`:''}
-        ${it.moldeCavidades? `<tr><td class="lbl">Nº de cavidades</td><td>${esc(it.moldeCavidades)}</td></tr>`:''}
-        ${it.moldeDimensoes? `<tr><td class="lbl">Dimensões</td><td>${esc(it.moldeDimensoes)}</td></tr>`:''}
-      </tbody></table>
-      ${dpFoot()}
-    </div>`);
+      <p style="margin-bottom:10px;font-weight:700">${esc(it.moldeDescricao)}</p>`});
+    const linhasMolde = `${it.moldeMaterial? `<tr><td class="lbl">Material</td><td>${esc(it.moldeMaterial)}</td></tr>`:''}${it.moldeCavidades? `<tr><td class="lbl">Nº de cavidades</td><td>${esc(it.moldeCavidades)}</td></tr>`:''}${it.moldeDimensoes? `<tr><td class="lbl">Dimensões</td><td>${esc(it.moldeDimensoes)}</td></tr>`:''}`;
+    if(linhasMolde) blocos.push({html:`<table class="spectable"><tbody>${linhasMolde}</tbody></table>`});
   });
 
-  /* páginas — ficha técnica por equipamento (quando cadastrada) */
+  /* ficha técnica por equipamento (quando cadastrada) */
   const jaMostrado = new Set();
   draft.itens.forEach(it=>{
     if(it.tipo==='molde') return;
@@ -2998,43 +3094,40 @@ function buildDocPages(){
     const fotosIt = fotosParaItemProposta(it, c);
     if(!c.ficha_tecnica && !c.descricao && !fotosIt.length) return;
     jaMostrado.add(c.id);
-    pages.push(`<div class="docpage">
-      ${dpHead()}
-      <p><b>ESPECIFICAÇÕES TÉCNICAS DA ${esc(c.modelo).toUpperCase()}</b></p>
+    blocos.push({html:`<p><b>ESPECIFICAÇÕES TÉCNICAS DA ${esc(c.modelo).toUpperCase()}</b></p>`, glueNext:true});
+    blocos.push({html:`
       <div style="text-align:center;margin:6px 0 16px">
         ${fotosIt.length ? fotosHtml(fotosIt) : svgMachineSketch(c.tipo)}
         <p class="hint" style="font-size:10.5px;margin-top:4px">${fotosIt.length ? 'Foto'+(fotosIt.length>1?'s':'')+' meramente ilustrativa'+(fotosIt.length>1?'s':'')+' — não representa'+(fotosIt.length>1?'m':'')+' necessariamente a cor, acabamento ou configuração exata do equipamento contratado.' : 'Esboço ilustrativo do tipo de equipamento — não representa o design final de fábrica.'}</p>
-      </div>
-      ${c.ficha_tecnica? renderSpecTableHtml(c.ficha_tecnica) : (c.descricao?`<p>${esc(c.descricao)}</p>`:'')}
-      <p class="hint" style="font-style:italic;margin-top:10px">As especificações técnicas e a configuração final deverão ser confirmadas pelo fabricante antes da emissão do pedido.</p>
-      ${dpFoot()}
-    </div>`);
+      </div>`});
+    if(c.ficha_tecnica) blocos.push(...dividirTabelaHtmlPorAltura(renderSpecTableHtml(c.ficha_tecnica)));
+    else if(c.descricao) blocos.push({html:`<p>${esc(c.descricao)}</p>`});
+    blocos.push({html:`<p class="hint" style="font-style:italic;margin-top:10px">As especificações técnicas e a configuração final deverão ser confirmadas pelo fabricante antes da emissão do pedido.</p>`});
   });
 
-  /* página — itens de série (se houver ao menos uma injetora) */
+  /* itens de série (se houver ao menos uma injetora) */
   if(draft.itens.some(it=>it.tipo==='injetora')){
-    pages.push(`<div class="docpage">
-      ${dpHead()}
-      <p><b>ITENS DE SÉRIE</b></p>
-      <table class="pricetable"><thead><tr><th>ITENS DE SÉRIE DA MÁQUINA / EQUIPAMENTO</th></tr></thead>
-      <tbody>${ITENS_SERIE_PADRAO.map(i=>`<tr><td>${esc(i)}</td></tr>`).join('')}</tbody></table>
-      ${dpFoot()}
-    </div>`);
+    blocos.push({html:`<p><b>ITENS DE SÉRIE</b></p>`, glueNext:true});
+    blocos.push(...dividirTabelaPorAltura(
+      '<tr><th>ITENS DE SÉRIE DA MÁQUINA / EQUIPAMENTO</th></tr>',
+      ITENS_SERIE_PADRAO.map(i=>`<tr><td>${esc(i)}</td></tr>`),
+      'pricetable'
+    ));
   }
 
-  /* página — composição comercial / preços */
+  /* composição comercial / preços */
   const itensRows = draft.itens.map(it=>{
     const c = calcItem(it);
     return `<tr><td>${esc(labelEquipamento(it))}${it.variante?` (${esc(it.variante)})`:''}${it.observacao?`<br><span class="hint">${esc(it.observacao)}</span>`:''}</td><td>${String(it.qtd).padStart(2,'0')}</td><td>${fmtUSD(c.totalLinha)}</td></tr>`;
   }).join('');
   const pagamentoLinhas = draft.pagamento.map(p=>`<p><b>${p.pct}% ${esc(p.descricao)}:</b> ${fmtUSD(t.total*p.pct/100)}</p>`).join('');
-  pages.push(`<div class="docpage">
-    ${dpHead()}
+  blocos.push({html:`
     <p><b>PROPOSTA COMERCIAL ${esc((draft.condicoes.modalidade||'').toUpperCase())}</b></p>
     <table class="pricetable"><thead><tr><th>Equipamento</th><th>Qtd.</th><th>Preço total FOB</th></tr></thead>
     <tbody>${itensRows}</tbody>
     <tfoot><tr><td><b>TOTAL GERAL</b></td><td><b>${String(draft.itens.reduce((s,i)=>s+i.qtd,0)).padStart(2,'0')}</b></td><td><b>${fmtUSD(t.total)}</b></td></tr></tfoot></table>
-    <p class="hint" style="margin-top:12px"><b>OBS.:</b> ${esc(OBS_FOB)}</p>
+    <p class="hint" style="margin-top:12px"><b>OBS.:</b> ${esc(OBS_FOB)}</p>`, glueNext:true});
+  blocos.push({html:`
     <h3 class="dp-h">Modalidade de pagamento:</h3>
     <p><b>Fechamento de Câmbio ${esc(draft.condicoes.incoterm||'FOB')}:</b> ${fmtUSD(t.total)}</p>
     <!-- Antes aqui também aparecia "${0}% no pedido / ${0}% no embarque" calculado a partir de
@@ -3044,36 +3137,29 @@ function buildDocPages(){
          cambioPedidoPct/cambioEmbarquePct continuam existindo e editáveis na etapa 3 — eles
          agora servem só para a cláusula de "Fechamento de Câmbio" do Contrato/Ordem de Compra. -->
     ${pagamentoLinhas}
-    ${t.serv>0 ? `<p style="margin-top:6px"><b>Serviços Brasil (${fmtUSD(t.serv)}):</b> parcelável em até ${draft.condicoes.servicosBrasilParcelasMax}x${draft.condicoes.servicosBrasilParcelasObs? ', '+esc(draft.condicoes.servicosBrasilParcelasObs):''} — condição sujeita a confirmação com o financeiro.</p>`:''}
+    ${t.serv>0 ? `<p style="margin-top:6px"><b>Serviços Brasil (${fmtUSD(t.serv)}):</b> parcelável em até ${draft.condicoes.servicosBrasilParcelasMax}x${draft.condicoes.servicosBrasilParcelasObs? ', '+esc(draft.condicoes.servicosBrasilParcelasObs):''} — condição sujeita a confirmação com o financeiro.</p>`:''}`, glueNext:true});
+  blocos.push({html:`
     <h3 class="dp-h">Prazos e logística:</h3>
     <p><b>Prazo de entrega na China:</b> previsão de ${esc(draft.condicoes.prazoFabricacao)}.<br>
     O prazo de fabricação se inicia após ${esc(draft.condicoes.prazoEmbarque)}.<br>
     <b>Prazo de transporte marítimo:</b> previsão de ${esc(draft.condicoes.prazoTransporte)}<br>
     <b>Frete:</b> ${esc(draft.condicoes.incoterm||'FOB')} ${esc((draft.condicoes.portoOrigem||'').split(',')[1]||'')}<br>
-    <b>Porto de origem:</b> ${esc((draft.condicoes.portoOrigem||'').toUpperCase())}</p>
-    ${dpFoot()}
-  </div>`);
+    <b>Porto de origem:</b> ${esc((draft.condicoes.portoOrigem||'').toUpperCase())}</p>`, glueNext:true});
 
-  /* página — condições gerais e assinatura */
-  pages.push(`<div class="docpage">
-    ${dpHead()}
-    <p><b>CONDIÇÕES GERAIS</b></p>
-    <h3 class="dp-h">Garantia</h3>
-    <p>${esc(draft.condicoes.garantia)}</p>
-    <h3 class="dp-h">Instalação</h3>
-    <p>${esc(draft.condicoes.instalacao)}</p>
-    ${temGold? `<h3 class="dp-h">NR12 - Segurança no Trabalho em Máquinas e Equipamentos:</h3>
-    <p>${esc(draft.condicoes.nr12)}</p>` : ''}
-    ${draft.condicoes.observacoes? `<h3 class="dp-h">Observações</h3><p>${esc(draft.condicoes.observacoes)}</p>`:''}
+  /* condições gerais e assinatura */
+  blocos.push({html:`<p><b>CONDIÇÕES GERAIS</b></p>`, glueNext:true});
+  blocos.push({html:`<h3 class="dp-h">Garantia</h3><p>${esc(draft.condicoes.garantia)}</p>`, glueNext:true});
+  blocos.push({html:`<h3 class="dp-h">Instalação</h3><p>${esc(draft.condicoes.instalacao)}</p>`, glueNext:true});
+  if(temGold) blocos.push({html:`<h3 class="dp-h">NR12 - Segurança no Trabalho em Máquinas e Equipamentos:</h3><p>${esc(draft.condicoes.nr12)}</p>`, glueNext:true});
+  if(draft.condicoes.observacoes) blocos.push({html:`<h3 class="dp-h">Observações</h3><p>${esc(draft.condicoes.observacoes)}</p>`, glueNext:true});
+  blocos.push({html:`
     <p style="margin-top:14px"><b>Validade da proposta: ${esc(draft.condicoes.validade)}.</b></p>
     <p style="margin-top:40px">Ficamos à disposição,<br>
     ${esc(draft.representante||'—')} - Comercial<br>
     ${draft.condicoes.repEmail? esc(draft.condicoes.repEmail)+'<br>':''}
-    ${draft.condicoes.repTelefone? esc(draft.condicoes.repTelefone):''}</p>
-    ${dpFoot()}
-  </div>`);
+    ${draft.condicoes.repTelefone? esc(draft.condicoes.repTelefone):''}</p>`});
 
-  return numerarPaginas(pages);
+  return numerarPaginas(montarDocpages(blocos));
 }
 function stepRevisao(body){
   const pages = buildDocPages();
@@ -3265,10 +3351,9 @@ function buildDocPagesMolde(){
   const clienteNome = (draft.cliente?.razao_social||draft.cliente?.nome_fantasia||'—').toUpperCase();
   const fmtValor = draft.moeda==='USD'? fmtUSD : fmtBRL;
   const totalMoldes = draft.moldes.reduce((s,m)=> s+(parseFloat(m.valor)||0), 0);
-  const pages = [];
+  const blocos = [];
   const itensChecklist = draft.moldes.filter(m=>m.descricao).map(m=>`<li>${esc(m.descricao)}</li>`).join('');
-  pages.push(`<div class="docpage">
-    ${dpHead()}
+  blocos.push({html:`
     <p><b>PROPOSTA COMERCIAL - MOLDE(S) - ${esc(draft.numero)}</b></p>
     <p>Caxias do Sul, ${esc(draft.dataBR)}.<br>REPRESENTANTE: ${esc((draft.representante||'—').toUpperCase())}</p>
     <p style="margin-top:18px"><b>À ${esc(clienteNome)}</b><br>
@@ -3278,19 +3363,15 @@ function buildDocPagesMolde(){
     <p style="margin-top:18px">Prezados Senhores,</p>
     <p>Apresentamos nossa proposta comercial para fabricação/fornecimento do(s) molde(s) abaixo descrito(s):</p>
     <ul class="checklist">${itensChecklist}</ul>
-    <p>Desde já, agradecemos a oportunidade de apresentação desta proposta.</p>
-    <h3 class="dp-h" style="font-style:italic">A GOLDEN MAQ</h3>
-    ${EMPRESA_SOBRE.map(p=>`<p>${esc(p)}</p>`).join('')}
-    ${dpFoot()}
-  </div>`);
+    <p>Desde já, agradecemos a oportunidade de apresentação desta proposta.</p>`});
+  blocos.push({html:`<h3 class="dp-h" style="font-style:italic">A GOLDEN MAQ</h3>`, glueNext:true});
+  EMPRESA_SOBRE.forEach(p=> blocos.push({html:`<p>${esc(p)}</p>`}));
+
   draft.moldes.forEach((m,i)=>{
     if(!m.descricao) return;
-    pages.push(`<div class="docpage">
-      ${dpHead()}
-      <h3 class="dp-h">Molde ${i+1} — especificações</h3>
-      <p style="margin:6px 0 12px;font-weight:700">${esc(m.descricao)}</p>
-      <div style="text-align:center;margin:6px 0 16px">${svgMachineSketch('molde')}<p class="hint" style="font-size:10.5px;margin-top:4px">Esboço ilustrativo — não representa o desenho final do molde.</p></div>
-      <table class="spectable"><tbody>
+    blocos.push({html:`<h3 class="dp-h">Molde ${i+1} — especificações</h3><p style="margin:6px 0 12px;font-weight:700">${esc(m.descricao)}</p>`, glueNext:true});
+    blocos.push({html:`<div style="text-align:center;margin:6px 0 16px">${svgMachineSketch('molde')}<p class="hint" style="font-size:10.5px;margin-top:4px">Esboço ilustrativo — não representa o desenho final do molde.</p></div>`});
+    blocos.push({html:`<table class="spectable"><tbody>
         ${m.material? `<tr><td class="lbl">Material do molde</td><td>${esc(m.material)}</td></tr>`:''}
         ${m.numCavidades? `<tr><td class="lbl">Nº de cavidades</td><td>${esc(m.numCavidades)}</td></tr>`:''}
         ${m.pesoPecaG? `<tr><td class="lbl">Peso estimado da peça</td><td>${esc(m.pesoPecaG)} g</td></tr>`:''}
@@ -3298,30 +3379,26 @@ function buildDocPagesMolde(){
         ${m.dimensoesMolde? `<tr><td class="lbl">Dimensões do molde</td><td>${esc(m.dimensoesMolde)}</td></tr>`:''}
         ${m.vidaUtilEstimadaCiclos? `<tr><td class="lbl">Vida útil estimada</td><td>${esc(m.vidaUtilEstimadaCiclos)} ciclos</td></tr>`:''}
         <tr><td class="lbl">Valor</td><td><b>${fmtValor(m.valor||0)}</b></td></tr>
-      </tbody></table>
-      ${dpFoot()}
-    </div>`);
+      </tbody></table>`});
   });
-  pages.push(`<div class="docpage">
-    ${dpHead()}
-    <h3 class="dp-h">Preço e condições de pagamento</h3>
+
+  blocos.push({html:`<h3 class="dp-h">Preço e condições de pagamento</h3>
     <table class="pricetable"><thead><tr><th>Molde</th><th>Valor</th></tr></thead>
     <tbody>${draft.moldes.filter(m=>m.descricao).map(m=>`<tr><td>${esc(m.descricao)}</td><td>${fmtValor(m.valor||0)}</td></tr>`).join('')}</tbody>
-    <tfoot><tr><td><b>TOTAL GERAL</b></td><td><b>${fmtValor(totalMoldes)}</b></td></tr></tfoot></table>
-    <h3 class="dp-h" style="margin-top:14px">Forma de pagamento:</h3>
+    <tfoot><tr><td><b>TOTAL GERAL</b></td><td><b>${fmtValor(totalMoldes)}</b></td></tr></tfoot></table>`, glueNext:true});
+  blocos.push({html:`<h3 class="dp-h">Forma de pagamento:</h3>
     ${pg.entradaPct? `<p><b>${pg.entradaPct}% ${esc(pg.entradaDesc||'')}:</b> ${fmtValor(totalMoldes*pg.entradaPct/100)}</p>`:''}
     ${pg.saldoPct? `<p><b>${pg.saldoPct}% ${esc(pg.saldoDesc||'')}:</b> ${fmtValor(totalMoldes*pg.saldoPct/100)}</p>`:''}
-    ${pg.parcelasObs? `<p class="hint" style="margin-top:6px">${esc(pg.parcelasObs)}</p>`:''}
-    <h3 class="dp-h">Prazos:</h3>
+    ${pg.parcelasObs? `<p class="hint" style="margin-top:6px">${esc(pg.parcelasObs)}</p>`:''}`, glueNext:true});
+  blocos.push({html:`<h3 class="dp-h">Prazos:</h3>
     ${cm.prazoFabricacao? `<p><b>Prazo de fabricação:</b> ${esc(cm.prazoFabricacao)}</p>`:''}
     ${cm.prazoEntrega? `<p><b>Prazo de entrega:</b> ${esc(cm.prazoEntrega)}</p>`:''}
     <p><b>Teste de aprovação:</b> ${esc(cm.testeAprovacao)}</p>
     <p><b>Garantia:</b> ${esc(cm.garantia)}</p>
     ${cm.observacoes? `<p><b>Observações:</b> ${esc(cm.observacoes)}</p>`:''}
-    <p style="margin-top:10px"><b>Validade da proposta:</b> ${esc(cm.validade)}</p>
-    ${dpFoot()}
-  </div>`);
-  return numerarPaginas(pages);
+    <p style="margin-top:10px"><b>Validade da proposta:</b> ${esc(cm.validade)}</p>`});
+
+  return numerarPaginas(montarDocpages(blocos));
 }
 function stepRevisaoMolde(body){
   const pages = buildDocPagesMolde();
@@ -4640,6 +4717,14 @@ function renderParagrafosHtml(paragrafos){
     : `<h4 style="font-size:12.5px;font-weight:700;margin:14px 0 4px;color:#16202e">${esc(p.h)}</h4>`
   ).join('');
 }
+/* mesma renderização de renderParagrafosHtml, mas como lista de blocos (um por parágrafo/subtítulo)
+   para alimentar o paginador automático — cada subtítulo (p.h) fica colado ao parágrafo seguinte. */
+function renderParagrafosBlocos(paragrafos){
+  return (paragrafos||[]).map(p=> typeof p==='string'
+    ? {html:`<p>${esc(p)}</p>`}
+    : {html:`<h4 style="font-size:12.5px;font-weight:700;margin:14px 0 4px;color:#16202e">${esc(p.h)}</h4>`, glueNext:true}
+  );
+}
 
 function novoContratoDraft(proposta){
   const cli = proposta ? proposta.cliente : null;
@@ -5351,52 +5436,46 @@ function buildContratoPages(){
   const temGold = (p.itens||[]).some(it=> String(it.linha||'').toLowerCase()==='gold');
   const compradoraEndereco = [d.comprador.logradouro, d.comprador.numero, d.comprador.complemento, d.comprador.bairro].filter(Boolean).join(', ') +
     (d.comprador.municipio? `, ${d.comprador.municipio}` : '') + (d.comprador.uf? `/${d.comprador.uf}` : '') + (d.comprador.cep? `, CEP ${d.comprador.cep}` : '');
-  const pages = [];
 
-  pages.push(`<div class="docpage">
-    ${dpHead()}
+  /* corpo do contrato: qualificação das partes + cláusulas — empacotado continuamente, só quebra
+     página quando o conteúdo realmente não cabe mais (ver nota em paginarBlocos). A assinatura e
+     os anexos começam cada um em sua própria sequência de páginas, por clareza do documento. */
+  const corpo = [];
+  corpo.push({html:`
     <h3 class="dp-h" style="text-align:center;font-size:15px">CONTRATO DE COMPRA E VENDA DE MÁQUINA(S)/EQUIPAMENTO(S)<br>COM SERVIÇOS DE INSTALAÇÃO</h3>
-    <p style="margin-top:16px">Por este instrumento particular de compra e venda, os abaixo assinados, que são partes, de um lado:</p>
-    <p style="margin-top:10px"><b>VENDEDORA:</b> ${esc(VENDEDORA_FIXA.razaoSocial)}, inscrita no CNPJ sob nº ${esc(VENDEDORA_FIXA.cnpj)} e Inscrição Estadual nº ${esc(VENDEDORA_FIXA.ie)}, com sede na ${esc(VENDEDORA_FIXA.endereco)}, representada por ${esc(VENDEDORA_FIXA.representanteNome)}, portadora da carteira de identidade ${esc(VENDEDORA_FIXA.representanteRg)}, inscrita no CPF ${esc(VENDEDORA_FIXA.representanteCpf)}, de outro lado:</p>
-    <p style="margin-top:10px"><b>COMPRADORA:</b> ${esc(d.comprador.razaoSocial||'—')}${d.comprador.nomeFantasia? ' ('+esc(d.comprador.nomeFantasia)+')':''}, inscrita no CNPJ nº ${esc(d.comprador.cnpj||'—')}${d.comprador.ie? ' e Inscrição Estadual nº '+esc(d.comprador.ie):''}, sediada na ${esc(compradoraEndereco||'—')}, neste ato representada por ${esc(d.comprador.representanteNome||'—')}, inscrita no CPF sob nº ${esc(d.comprador.representanteCpf||'—')}${d.comprador.representanteRg? ' e documento de identidade '+esc(d.comprador.representanteRg)+(d.comprador.representanteOrgao? '/'+esc(d.comprador.representanteOrgao):''):''};</p>
-    <p style="margin-top:10px">Os signatários deste instrumento, devidamente qualificados, têm justo e contratado a COMPRA E VENDA da(s) máquina(s)/equipamento(s) abaixo descrita e caracterizada, mediante as cláusulas e condições a seguir estipuladas:</p>
-    ${dpFoot()}
-  </div>`);
+    <p style="margin-top:16px">Por este instrumento particular de compra e venda, os abaixo assinados, que são partes, de um lado:</p>`, glueNext:true});
+  corpo.push({html:`
+    <p style="margin-top:10px"><b>VENDEDORA:</b> ${esc(VENDEDORA_FIXA.razaoSocial)}, inscrita no CNPJ sob nº ${esc(VENDEDORA_FIXA.cnpj)} e Inscrição Estadual nº ${esc(VENDEDORA_FIXA.ie)}, com sede na ${esc(VENDEDORA_FIXA.endereco)}, representada por ${esc(VENDEDORA_FIXA.representanteNome)}, portadora da carteira de identidade ${esc(VENDEDORA_FIXA.representanteRg)}, inscrita no CPF ${esc(VENDEDORA_FIXA.representanteCpf)}, de outro lado:</p>`});
+  corpo.push({html:`<p style="margin-top:10px"><b>COMPRADORA:</b> ${esc(d.comprador.razaoSocial||'—')}${d.comprador.nomeFantasia? ' ('+esc(d.comprador.nomeFantasia)+')':''}, inscrita no CNPJ nº ${esc(d.comprador.cnpj||'—')}${d.comprador.ie? ' e Inscrição Estadual nº '+esc(d.comprador.ie):''}, sediada na ${esc(compradoraEndereco||'—')}, neste ato representada por ${esc(d.comprador.representanteNome||'—')}, inscrita no CPF sob nº ${esc(d.comprador.representanteCpf||'—')}${d.comprador.representanteRg? ' e documento de identidade '+esc(d.comprador.representanteRg)+(d.comprador.representanteOrgao? '/'+esc(d.comprador.representanteOrgao):''):''};</p>`});
+  corpo.push({html:`<p style="margin-top:10px">Os signatários deste instrumento, devidamente qualificados, têm justo e contratado a COMPRA E VENDA da(s) máquina(s)/equipamento(s) abaixo descrita e caracterizada, mediante as cláusulas e condições a seguir estipuladas:</p>`});
 
-  pages.push(`<div class="docpage">
-    ${dpHead()}
-    <h3 class="dp-h">Cláusula Primeira – Do Objeto do Contrato</h3>
-    <p>A VENDEDORA vende, neste ato, à COMPRADORA, a(s) máquina(s)/equipamento(s) a seguir descrito e caracterizada:</p>
-    <p style="margin:10px 0;font-weight:700">${esc(d.objeto||'—')}</p>
-    ${temGold? `<p>A(s) máquina(s)/equipamento(s) termoplástica(s) do presente contrato está(ão) em conformidade com a Norma Regulamentadora Número 12 (NR-12), sendo a emissão de prontuário técnico de adequação, bem como prontuário técnico de entrega e instalação, fornecida pela VENDEDORA, ficando a critério da COMPRADORA contratar ou não serviços da VENDEDORA caso haja necessidade de renovação anual (valores de renovação não inclusos no presente contrato).</p>` : ''}
-    <p>As especificações técnicas da(s) máquina(s)/equipamento(s) estão no ANEXO 01 que integra o presente instrumento.</p>
-    <p>A(s) máquina(s)/equipamento(s) objeto do presente contrato refere(m)-se à importação diretamente da China através da representação da VENDEDORA e está(ão) sujeita(s) a todas as formalidades legais e tributárias dos processos de importação vigentes no Brasil.</p>
-    <p>A VENDEDORA é agente comercial exclusiva da empresa fabricante da(s) máquina(s)/equipamento(s) para a América Latina, e está sujeita aos procedimentos de importação vigentes no Brasil. Para clarificar o processo de importação, suas rotinas e passos, o ANEXO 02 elucida e integra o presente instrumento e a COMPRADORA dá sua ciência sobre o mesmo.</p>
-    ${dpFoot()}
-  </div>`);
+  corpo.push({html:`<h3 class="dp-h">Cláusula Primeira – Do Objeto do Contrato</h3>
+    <p>A VENDEDORA vende, neste ato, à COMPRADORA, a(s) máquina(s)/equipamento(s) a seguir descrito e caracterizada:</p>`, glueNext:true});
+  corpo.push({html:`<p style="margin:10px 0;font-weight:700">${esc(d.objeto||'—')}</p>`});
+  if(temGold) corpo.push({html:`<p>A(s) máquina(s)/equipamento(s) termoplástica(s) do presente contrato está(ão) em conformidade com a Norma Regulamentadora Número 12 (NR-12), sendo a emissão de prontuário técnico de adequação, bem como prontuário técnico de entrega e instalação, fornecida pela VENDEDORA, ficando a critério da COMPRADORA contratar ou não serviços da VENDEDORA caso haja necessidade de renovação anual (valores de renovação não inclusos no presente contrato).</p>`});
+  corpo.push({html:`<p>As especificações técnicas da(s) máquina(s)/equipamento(s) estão no ANEXO 01 que integra o presente instrumento.</p>`});
+  corpo.push({html:`<p>A(s) máquina(s)/equipamento(s) objeto do presente contrato refere(m)-se à importação diretamente da China através da representação da VENDEDORA e está(ão) sujeita(s) a todas as formalidades legais e tributárias dos processos de importação vigentes no Brasil.</p>`});
+  corpo.push({html:`<p>A VENDEDORA é agente comercial exclusiva da empresa fabricante da(s) máquina(s)/equipamento(s) para a América Latina, e está sujeita aos procedimentos de importação vigentes no Brasil. Para clarificar o processo de importação, suas rotinas e passos, o ANEXO 02 elucida e integra o presente instrumento e a COMPRADORA dá sua ciência sobre o mesmo.</p>`});
 
-  pages.push(`<div class="docpage">
-    ${dpHead()}
-    <h3 class="dp-h">Cláusula Segunda – Do Preço e das Condições de Pagamento</h3>
-    <p>O preço certo e ajustado, acordado entre as partes, da presente compra e venda é de ${fmtUSD(t.total)} FOB e será pago da seguinte forma:</p>
-    <p style="margin-top:8px"><b>Fechamento de Câmbio:</b> ${fmtUSD(valorCambio)} FOB, sendo ${cambioPedidoPct}% (${fmtUSD(valorCambio*cambioPedidoPct/100)}) do valor pago na data de confirmação do pedido e o saldo de ${cambioEmbarquePct}% (${fmtUSD(valorCambio*cambioEmbarquePct/100)}) pago antes da data de embarque no porto de origem.</p>
-    ${t.serv>0? `<p style="margin-top:8px"><b>Serviços Brasil:</b> ${fmtUSD(t.serv)}. Serão pagos em até ${parcelasMax} parcelas mensais e consecutivas de aproximadamente ${fmtUSD(valorParcela)} cada uma. O vencimento da primeira parcela será 7 dias após a confirmação do pedido. As parcelas serão convertidas no valor do dólar P-TAX de compra do dia da emissão da nota fiscal de serviços.</p>`:''}
-    <p style="margin-top:8px">As custas, taxas, seguro internacional e numerários necessários para o processo de importação e os valores de impostos de importação são de exclusiva responsabilidade da COMPRADORA.</p>
-    <p>A presente compra e venda é celebrada pelo valor em dólares, mas convertida em MOEDA CORRENTE NACIONAL, na ocasião da emissão das notas fiscais relativas ao parcelamento acordado, pelas taxas oficiais vigentes (valor do dólar P-TAX de compra).</p>
-    <p>A COMPRADORA dá ciência e aceite de que somente depois do recebimento do valor de entrada (quando houver), assinatura do contrato comercial de compra e venda e da proforma invoice é que será iniciado o processo de fabricação da(s) máquina(s)/equipamento(s) objeto do presente contrato, bem como a contagem do prazo de fabricação de ${esc(p.condicoes?.prazoFabricacao||'60 dias')}.</p>
-    <p>Para desembaraço aduaneiro da(s) máquina(s)/equipamento(s) no porto de chegada, o COMPRADOR deverá ter habilitação SISCOMEX válida. Quaisquer irregularidades no sistema RADAR da SRF não desobrigam o COMPRADOR do pagamento do preço ajustado e das condições estipuladas.</p>
-    <p>Caso haja atraso do pagamento das parcelas acima ajustadas, o COMPRADOR pagará à VENDEDORA juros de mora de 1% ao mês, mais correção monetária (IGP-M FGV) e multa de 2% sobre o valor da parcela em atraso.</p>
-    <p>Atrasos no pagamento superiores a 60 (sessenta) dias obrigarão a COMPRADORA a pagar multa adicional de 10% sobre o valor das parcelas em atraso, sem prejuízo do disposto acima.</p>
-    <p>Atrasos no pagamento superiores a 90 (noventa) dias implicarão na rescisão do presente contrato e obrigarão a COMPRADORA a pagar multa de 10% sobre o valor total da compra e venda, além do bloqueio automático do funcionamento da máquina, cujo software estará programado para essa condição.</p>
-    ${dpFoot()}
-  </div>`);
+  corpo.push({html:`<h3 class="dp-h">Cláusula Segunda – Do Preço e das Condições de Pagamento</h3>
+    <p>O preço certo e ajustado, acordado entre as partes, da presente compra e venda é de ${fmtUSD(t.total)} FOB e será pago da seguinte forma:</p>`, glueNext:true});
+  corpo.push({html:`<p style="margin-top:8px"><b>Fechamento de Câmbio:</b> ${fmtUSD(valorCambio)} FOB, sendo ${cambioPedidoPct}% (${fmtUSD(valorCambio*cambioPedidoPct/100)}) do valor pago na data de confirmação do pedido e o saldo de ${cambioEmbarquePct}% (${fmtUSD(valorCambio*cambioEmbarquePct/100)}) pago antes da data de embarque no porto de origem.</p>`});
+  if(t.serv>0) corpo.push({html:`<p style="margin-top:8px"><b>Serviços Brasil:</b> ${fmtUSD(t.serv)}. Serão pagos em até ${parcelasMax} parcelas mensais e consecutivas de aproximadamente ${fmtUSD(valorParcela)} cada uma. O vencimento da primeira parcela será 7 dias após a confirmação do pedido. As parcelas serão convertidas no valor do dólar P-TAX de compra do dia da emissão da nota fiscal de serviços.</p>`});
+  corpo.push({html:`<p style="margin-top:8px">As custas, taxas, seguro internacional e numerários necessários para o processo de importação e os valores de impostos de importação são de exclusiva responsabilidade da COMPRADORA.</p>`});
+  corpo.push({html:`<p>A presente compra e venda é celebrada pelo valor em dólares, mas convertida em MOEDA CORRENTE NACIONAL, na ocasião da emissão das notas fiscais relativas ao parcelamento acordado, pelas taxas oficiais vigentes (valor do dólar P-TAX de compra).</p>`});
+  corpo.push({html:`<p>A COMPRADORA dá ciência e aceite de que somente depois do recebimento do valor de entrada (quando houver), assinatura do contrato comercial de compra e venda e da proforma invoice é que será iniciado o processo de fabricação da(s) máquina(s)/equipamento(s) objeto do presente contrato, bem como a contagem do prazo de fabricação de ${esc(p.condicoes?.prazoFabricacao||'60 dias')}.</p>`});
+  corpo.push({html:`<p>Para desembaraço aduaneiro da(s) máquina(s)/equipamento(s) no porto de chegada, o COMPRADOR deverá ter habilitação SISCOMEX válida. Quaisquer irregularidades no sistema RADAR da SRF não desobrigam o COMPRADOR do pagamento do preço ajustado e das condições estipuladas.</p>`});
+  corpo.push({html:`<p>Caso haja atraso do pagamento das parcelas acima ajustadas, o COMPRADOR pagará à VENDEDORA juros de mora de 1% ao mês, mais correção monetária (IGP-M FGV) e multa de 2% sobre o valor da parcela em atraso.</p>`});
+  corpo.push({html:`<p>Atrasos no pagamento superiores a 60 (sessenta) dias obrigarão a COMPRADORA a pagar multa adicional de 10% sobre o valor das parcelas em atraso, sem prejuízo do disposto acima.</p>`});
+  corpo.push({html:`<p>Atrasos no pagamento superiores a 90 (noventa) dias implicarão na rescisão do presente contrato e obrigarão a COMPRADORA a pagar multa de 10% sobre o valor total da compra e venda, além do bloqueio automático do funcionamento da máquina, cujo software estará programado para essa condição.</p>`});
 
   CONTRATO_CLAUSULAS_FIXAS.forEach(cl=>{
-    pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(cl.titulo)}</h3>${renderParagrafosHtml(cl.paragrafos)}${dpFoot()}</div>`);
+    corpo.push({html:`<h3 class="dp-h">${esc(cl.titulo)}</h3>`, glueNext:true});
+    corpo.push(...renderParagrafosBlocos(cl.paragrafos));
   });
 
-  pages.push(`<div class="docpage">
-    ${dpHead()}
+  /* assinatura — sempre em sua própria sequência de páginas */
+  const assinatura = [{html:`
     <p style="margin-top:30px">${esc(VENDEDORA_FIXA.endereco.split(',').pop().trim().split('/')[0]||'Caxias do Sul')}, ${esc(d.dataBR||todayBR())}.</p>
     <div style="display:flex;justify-content:space-between;margin-top:70px;gap:20px">
       <div style="text-align:center;flex:1">
@@ -5415,10 +5494,10 @@ function buildContratoPages(){
     Anexo 01: Especificações técnicas da(s) Máquina(s)/Equipamento(s)<br>
     Anexo 02: Processo de Importação.<br>
     Anexo 03: Manual de Pré-instalação.<br>
-    Anexo 04: Políticas e Condições para Instalação e Assistência Técnica.</p>
-    ${dpFoot()}
-  </div>`);
+    Anexo 04: Políticas e Condições para Instalação e Assistência Técnica.</p>`}];
 
+  /* anexos — também empacotados continuamente entre si */
+  const anexos = [];
   const jaMostrado = new Set();
   (p.itens||[]).forEach(it=>{
     const c = CATALOGO.find(x=>x.id===it.catalogId);
@@ -5426,22 +5505,21 @@ function buildContratoPages(){
     const fotosIt = fotosParaItemProposta(it, c);
     if(!c.ficha_tecnica && !c.descricao && !fotosIt.length) return;
     jaMostrado.add(c.id);
-    pages.push(`<div class="docpage">
-      ${dpHead()}
-      <h3 class="dp-h">ANEXO 01 – ESPECIFICAÇÕES TÉCNICAS — ${esc(c.modelo).toUpperCase()}</h3>
+    anexos.push({html:`<h3 class="dp-h">ANEXO 01 – ESPECIFICAÇÕES TÉCNICAS — ${esc(c.modelo).toUpperCase()}</h3>`, glueNext:true});
+    anexos.push({html:`
       <div style="text-align:center;margin:6px 0 16px">
         ${fotosIt.length ? fotosHtml(fotosIt) : svgMachineSketch(c.tipo)}
         <p class="hint" style="font-size:10.5px;margin-top:4px">${fotosIt.length ? 'Foto'+(fotosIt.length>1?'s':'')+' meramente ilustrativa'+(fotosIt.length>1?'s':'')+'.' : 'Esboço ilustrativo do tipo de equipamento.'}</p>
-      </div>
-      ${c.ficha_tecnica? renderSpecTableHtml(c.ficha_tecnica) : (c.descricao?`<p>${esc(c.descricao)}</p>`:'')}
-      ${dpFoot()}
-    </div>`);
+      </div>`});
+    if(c.ficha_tecnica) anexos.push(...dividirTabelaHtmlPorAltura(renderSpecTableHtml(c.ficha_tecnica)));
+    else if(c.descricao) anexos.push({html:`<p>${esc(c.descricao)}</p>`});
+  });
+  [CONTRATO_ANEXO02, CONTRATO_ANEXO03, CONTRATO_ANEXO04].forEach(anexo=>{
+    anexos.push({html:`<h3 class="dp-h">${esc(anexo.titulo)}</h3>`, glueNext:true});
+    anexos.push(...renderParagrafosBlocos(anexo.paragrafos));
   });
 
-  pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(CONTRATO_ANEXO02.titulo)}</h3>${renderParagrafosHtml(CONTRATO_ANEXO02.paragrafos)}${dpFoot()}</div>`);
-  pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(CONTRATO_ANEXO03.titulo)}</h3>${renderParagrafosHtml(CONTRATO_ANEXO03.paragrafos)}${dpFoot()}</div>`);
-  pages.push(`<div class="docpage">${dpHead()}<h3 class="dp-h">${esc(CONTRATO_ANEXO04.titulo)}</h3>${renderParagrafosHtml(CONTRATO_ANEXO04.paragrafos)}${dpFoot()}</div>`);
-
+  const pages = [...montarDocpages(corpo), ...montarDocpages(assinatura), ...montarDocpages(anexos)];
   return numerarPaginas(pages);
 }
 function repintarDocContrato(){
