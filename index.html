@@ -2952,14 +2952,16 @@ function stepRevisao(body){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="wStatus">${['Rascunho','Aguardando aprovação','Enviada','Em negociação','Aprovada','Perdida','Cancelada'].map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select>
         <button class="btn" id="btnBaixarHtml">Baixar documento (.html)</button>
+        <button class="btn gold" id="btnBaixarPdf">⬇️ Baixar PDF</button>
         <button class="btn gold" id="btnSalvarProposta">Salvar proposta</button>
       </div>
     </div>
-    <p class="hint" style="margin-top:10px">O documento acima já segue o padrão Goldenmaq (modelo Alpargatas). Baixe o .html e abra no navegador para imprimir/salvar como PDF — cada bloco vira uma página.</p>`;
+    <p class="hint" style="margin-top:10px">O documento acima já segue o padrão Goldenmaq (modelo Alpargatas), pronto no formato A4. Use "Baixar PDF" para gerar o arquivo pronto para enviar ao cliente.</p>`;
   document.getElementById('btnStep4Back').onclick = ()=>{ draft.step=3; paintWizStep2Refresh(); };
   document.getElementById('wStatus').onchange = e=> draft.status = e.target.value;
   document.getElementById('btnSalvarProposta').onclick = salvarProposta;
   document.getElementById('btnBaixarHtml').onclick = baixarDocumentoHtml;
+  document.getElementById('btnBaixarPdf').onclick = (e)=> gerarEBaixarPdf('docPreview', `Proposta_${docIdFromNumero(draft.numero)}`, e.currentTarget);
 }
 
 async function salvarProposta(){
@@ -2984,17 +2986,67 @@ async function salvarPropostaRegistro(extra){
   }
   draft = null; location.hash = 'propostas';
 }
+/* Reúne o CSS de todas as tags <style> do app (document.querySelector('style')
+   pegava só a primeira — um bloco pequeno de ajuste de viewport — e deixava de
+   fora TODO o CSS do documento (.docpage, .dp-logo-wrap, tabelas, quebras de
+   página etc.), o que fazia a logo sair gigante e a paginação da impressão/PDF
+   ficar quebrada). */
+function todosEstilosApp(){
+  return [...document.querySelectorAll('style')].map(s=>s.textContent).join('\n');
+}
+/* CSS de página fixo em A4 sem margem do navegador — o espaçamento visual
+   (margens, cabeçalho, rodapé dourado) já vem do padding do .docpage, então a
+   página de impressão deve ficar com margem zero para não dobrar o espaçamento
+   nem deslocar o conteúdo. */
+const CSS_PAGINA_A4 = `@page{size:A4;margin:0}
+.docpage{page-break-after:always;break-after:page}
+.docpage:last-child{page-break-after:auto;break-after:auto}`;
+
 async function baixarDocumentoHtml(){
   const dl = await (async ()=>{ try{ return temClaudeRuntime()? await claude.use('downloads') : LocalDownloads; }catch(e){ return LocalDownloads; } })();
   const htmlDoc = document.getElementById('docPreview').outerHTML;
   const printBar = `<div class="print-bar" style="position:sticky;top:0;z-index:9;background:#1a2f4a;padding:10px;text-align:center;margin-bottom:14px">
     <button onclick="window.print()" style="background:#c9a227;color:#241b00;border:none;border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">🖨️ Imprimir / Salvar como PDF</button>
-    <span style="color:#fff;font-size:12px;margin-left:10px">Na caixa de impressão, escolha "Salvar como PDF".</span>
+    <span style="color:#fff;font-size:12px;margin-left:10px">Na caixa de impressão: destino "Salvar como PDF", margens "Nenhuma" e desative "Cabeçalhos e rodapés".</span>
   </div>
   <style>@media print{.print-bar{display:none!important}}</style>`;
-  const full = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(draft.numero)}</title><style>body{font-family:Arial,sans-serif;margin:0;background:#fff}${document.querySelector('style').textContent}</style></head><body>${printBar}${htmlDoc}</body></html>`;
+  const full = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(draft.numero)}</title><style>body{font-family:Arial,sans-serif;margin:0;background:#fff}${todosEstilosApp()}\n${CSS_PAGINA_A4}</style></head><body>${printBar}${htmlDoc}</body></html>`;
   if(dl){ try{ await dl.save({filename:`Proposta_${docIdFromNumero(draft.numero)}.html`, data: full}); toast('Baixado. Abra o arquivo e clique em "Imprimir / Salvar como PDF".'); return; }catch(e){ /* fallthrough */ } }
   toast('Download não disponível nesta visualização.');
+}
+
+/* Gera o PDF no servidor (Chromium headless) a partir do mesmo HTML/CSS
+   exibido na tela — fica visualmente idêntico ao modelo A4, sem o
+   cabeçalho/rodapé que o navegador injeta ao usar "Imprimir" manualmente. */
+async function gerarEBaixarPdf(previewId, filename, btn){
+  const el = document.getElementById(previewId);
+  if(!el){ toast('Nada para gerar.'); return; }
+  const original = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = 'Gerando PDF…'; }
+  try{
+    const resp = await fetch('/api/gerar-pdf', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({ html: el.outerHTML, css: todosEstilosApp(), filename })
+    });
+    if(!resp.ok){
+      let msg = 'Falha ao gerar PDF.';
+      try{ const j = await resp.json(); if(j && j.error) msg = j.error; }catch(e){}
+      toast(msg + ' Use "Baixar documento (.html)" como alternativa.');
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${filename}.pdf`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast('PDF gerado.');
+  }catch(e){
+    console.error(e);
+    toast('Falha ao gerar PDF. Use "Baixar documento (.html)" como alternativa.');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = original; }
+  }
 }
 
 
@@ -3180,14 +3232,16 @@ function stepRevisaoMolde(body){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="wStatus">${['Rascunho','Aguardando aprovação','Enviada','Em negociação','Aprovada','Perdida','Cancelada'].map(s=>`<option ${draft.status===s?'selected':''}>${s}</option>`).join('')}</select>
         <button class="btn" id="btnBaixarHtml">Baixar documento (.html)</button>
+        <button class="btn gold" id="btnBaixarPdf">⬇️ Baixar PDF</button>
         <button class="btn gold" id="btnSalvarProposta">Salvar proposta</button>
       </div>
     </div>
-    <p class="hint" style="margin-top:10px">Baixe o .html e abra no navegador para imprimir/salvar como PDF.</p>`;
+    <p class="hint" style="margin-top:10px">Use "Baixar PDF" para gerar o arquivo pronto para enviar ao cliente, no padrão A4.</p>`;
   document.getElementById('btnStep4BackM').onclick = ()=>{ draft.step=3; paintWizStep2Refresh(); };
   document.getElementById('wStatus').onchange = e=> draft.status = e.target.value;
   document.getElementById('btnSalvarProposta').onclick = salvarProposta;
   document.getElementById('btnBaixarHtml').onclick = baixarDocumentoHtml;
+  document.getElementById('btnBaixarPdf').onclick = (e)=> gerarEBaixarPdf('docPreview', `Proposta_${docIdFromNumero(draft.numero)}`, e.currentTarget);
 }
 
 /* ================= PROPOSTAS (lista) ================= */
@@ -5128,11 +5182,13 @@ function renderNovoContrato(app){
       <div class="doc-preview" id="ctrDocPreview"></div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn" id="btnBaixarContrato">Baixar documento (.html)</button>
+        <button class="btn gold" id="btnBaixarContratoPdf">⬇️ Baixar PDF</button>
         <button class="btn primary" id="btnSalvarContrato">Salvar contrato</button>
       </div>
-      <p class="hint" style="margin-top:8px">Baixe o .html e abra no navegador para imprimir/salvar como PDF — segue o padrão A4 já usado nas propostas.</p>
+      <p class="hint" style="margin-top:8px">Use "Baixar PDF" para gerar o arquivo pronto para assinatura, no padrão A4 já usado nas propostas.</p>
     </div>`;
   document.getElementById('btnFecharContrato').onclick = ()=>{ contratoDraft = null; renderContratos(app); };
+  document.getElementById('btnBaixarContratoPdf').onclick = (e)=> gerarEBaixarPdf('ctrDocPreview', `Contrato_${docIdFromNumero(contratoDraft.numero)}`, e.currentTarget);
   const bind = (id, path)=>{ document.getElementById(id).addEventListener('input', e=>{ setPath(d, path, e.target.value); repintarDocContrato(); }); };
   bind('ctRazao','comprador.razaoSocial'); bind('ctFantasia','comprador.nomeFantasia'); bind('ctCnpj','comprador.cnpj'); bind('ctIe','comprador.ie');
   bind('ctLogradouro','comprador.logradouro'); bind('ctNumero','comprador.numero'); bind('ctComplemento','comprador.complemento');
@@ -5294,13 +5350,12 @@ function repintarDocContrato(){
 }
 function baixarContratoHtml(){
   const preview = document.getElementById('ctrDocPreview');
-  const styleTag = document.querySelector('style');
   const printBar = `<div class="print-bar" style="position:sticky;top:0;z-index:9;background:#1a2f4a;padding:10px;text-align:center;margin-bottom:14px">
     <button onclick="window.print()" style="background:#c9a227;color:#241b00;border:none;border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">🖨️ Imprimir / Salvar como PDF</button>
-    <span style="color:#fff;font-size:12px;margin-left:10px">Na caixa de impressão, escolha "Salvar como PDF" para gerar o arquivo e enviar para assinatura.</span>
+    <span style="color:#fff;font-size:12px;margin-left:10px">Na caixa de impressão: destino "Salvar como PDF", margens "Nenhuma" e desative "Cabeçalhos e rodapés", para gerar o arquivo de assinatura.</span>
   </div>
   <style>@media print{.print-bar{display:none!important}}</style>`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(contratoDraft.numero)}</title>${styleTag? styleTag.outerHTML : ''}</head><body style="background:#eef1f5">${printBar}${preview.outerHTML}</body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(contratoDraft.numero)}</title><style>${todosEstilosApp()}\n${CSS_PAGINA_A4}</style></head><body style="background:#eef1f5">${printBar}${preview.outerHTML}</body></html>`;
   const blob = new Blob([html], {type:'text/html'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = `Contrato_${docIdFromNumero(contratoDraft.numero)}.html`; a.click();

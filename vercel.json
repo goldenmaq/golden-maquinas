@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/gerar-pdf.js": {
+      "memory": 1536,
+      "maxDuration": 30
+    }
+  }
+}
