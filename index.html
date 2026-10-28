@@ -2887,7 +2887,6 @@ function buildDocPages(){
     const c = calcItem(it);
     return `<tr><td>${esc(labelEquipamento(it))}${it.variante?` (${esc(it.variante)})`:''}${it.observacao?`<br><span class="hint">${esc(it.observacao)}</span>`:''}</td><td>${String(it.qtd).padStart(2,'0')}</td><td>${fmtUSD(c.totalLinha)}</td></tr>`;
   }).join('');
-  const pagamentoLinhas = draft.pagamento.map(p=>`<p><b>${p.pct}% ${esc(p.descricao)}:</b> ${fmtUSD(t.total*p.pct/100)}</p>`).join('');
   pages.push(`<div class="docpage">
     ${dpHead()}
     <p><b>PROPOSTA COMERCIAL ${esc((draft.condicoes.modalidade||'').toUpperCase())}</b></p>
@@ -2898,7 +2897,6 @@ function buildDocPages(){
     <h3 class="dp-h">Modalidade de pagamento:</h3>
     <p><b>Fechamento de Câmbio ${esc(draft.condicoes.incoterm||'FOB')}:</b> ${fmtUSD(t.total)}<br>
     ${draft.condicoes.cambioPedidoPct}% no pedido (${fmtUSD(t.total*draft.condicoes.cambioPedidoPct/100)}) · ${draft.condicoes.cambioEmbarquePct}% no embarque (${fmtUSD(t.total*draft.condicoes.cambioEmbarquePct/100)})</p>
-    ${pagamentoLinhas}
     ${t.serv>0 ? `<p style="margin-top:6px"><b>Serviços Brasil (${fmtUSD(t.serv)}):</b> parcelável em até ${draft.condicoes.servicosBrasilParcelasMax}x${draft.condicoes.servicosBrasilParcelasObs? ', '+esc(draft.condicoes.servicosBrasilParcelasObs):''} — condição sujeita a confirmação com o financeiro.</p>`:''}
     <h3 class="dp-h">Prazos e logística:</h3>
     <p><b>Prazo de entrega na China:</b> previsão de ${esc(draft.condicoes.prazoFabricacao)}.<br>
