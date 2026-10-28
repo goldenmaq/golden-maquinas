@@ -8,8 +8,16 @@
 // consistente (um .docpage = uma página do PDF), deixando o arquivo fiel
 // ao padrão A4 exibido na tela e pronto para enviar ao cliente.
 const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
 const { getSessionFromReq, readJsonBody } = require('../lib/gmauth');
+
+// puppeteer-core (a partir da v25) é publicado só como ES Module — require()
+// direto gera ERR_REQUIRE_ESM neste arquivo CommonJS, então carregamos com
+// import() dinâmico (funciona de dentro de CJS) e reaproveitamos a promise.
+let puppeteerPromise = null;
+function getPuppeteer() {
+  if (!puppeteerPromise) puppeteerPromise = import('puppeteer-core').then((m) => m.default || m);
+  return puppeteerPromise;
+}
 
 const MAX_HTML_LEN = 8 * 1024 * 1024; // 8MB de HTML/CSS (margem folgada acima do limite de corpo da função)
 
@@ -40,16 +48,18 @@ function wrapHtml({ css, bodyHtml, title }) {
 
 // Reaproveita o browser entre invocações "quentes" da função serverless.
 let browserPromise = null;
+async function launchBrowser() {
+  const puppeteer = await getPuppeteer();
+  return puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: { width: 794, height: 1123 },
+    executablePath: await chromium.executablePath(),
+    headless: chromium.headless,
+  });
+}
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = puppeteer
-      .launch({
-        args: chromium.args,
-        defaultViewport: { width: 794, height: 1123 },
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-      })
-      .catch((e) => { browserPromise = null; throw e; });
+    browserPromise = launchBrowser().catch((e) => { browserPromise = null; throw e; });
   }
   return browserPromise;
 }
