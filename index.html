@@ -2760,8 +2760,13 @@ function fotoEquipamento(c){
   if(c.foto) return c.foto;
   if(c.tipo==='esteira') return FOTOS_EQUIP.esteira;
   if(c.tipo==='robo') return FOTOS_EQUIP.robo;
-  if(c.tipo==='injetora' && c.linha==='Gold') return FOTOS_EQUIP.injetoraGold;
-  if(c.tipo==='injetora' && c.linha==='Silver') return FOTOS_EQUIP.injetoraSilver;
+  // Comparação por "contém" (case-insensitive): a linha cadastrada costuma vir
+  // com sufixos como "Gold Dosagem Eletrica" ou "Silver Dosagem Eletrica", não
+  // apenas "Gold"/"Silver" puros — a igualdade estrita antiga nunca batia e a
+  // foto padrão da linha nunca aparecia, caindo sempre no esboço genérico.
+  const linha = (c.linha||'').toLowerCase();
+  if(c.tipo==='injetora' && linha.includes('gold')) return FOTOS_EQUIP.injetoraGold;
+  if(c.tipo==='injetora' && linha.includes('silver')) return FOTOS_EQUIP.injetoraSilver;
   return null;
 }
 function svgMachineSketch(tipo){
