@@ -2653,35 +2653,17 @@ function stepPrecificacao(body){
       <div class="field" style="margin-top:10px"><label>Instalação</label><textarea id="cInstal" rows="2">${esc(draft.condicoes.instalacao)}</textarea></div>
       <div class="field" style="margin-top:10px"><label>Observações contratuais</label><textarea id="cObs" rows="2" placeholder="particularidades do cliente, se houver...">${esc(draft.condicoes.observacoes)}</textarea></div>
     </div>
-    <div class="card pad" style="margin-bottom:16px">
-      <h3 style="font-size:13px;color:var(--muted);margin-bottom:10px">Condições de pagamento</h3>
-      <div id="pagamentoLinhas"></div>
-      <button class="btn" id="btnAddParcela" style="margin-top:8px">+ Adicionar parcela</button>
-      <p class="hint" id="pagamentoSoma" style="margin-top:8px"></p>
-      <div class="inline-list" style="margin-top:10px">
-        <button class="btn ghost" data-tpl="golden">Modelo Golden Eagle (30/65/5)</button>
-        <button class="btn ghost" data-tpl="kclka">Modelo KCLKA (30/70)</button>
-      </div>
-    </div>
     <div style="display:flex;justify-content:space-between">
       <button class="btn" id="btnStep3Back">← Voltar</button>
       <button class="btn primary" id="btnStep3Next">Avançar →</button>
     </div>`;
   paintItensPrecificacao();
-  paintPagamentoLinhas();
   document.getElementById('wMoeda').onchange = e=> draft.moeda = e.target.value;
   document.getElementById('wCotacao').oninput = e=> draft.cotacao = parseFloat(e.target.value)||null;
   ['cModalidade','cIncoterm','cPorto','cFab','cTransp','cValid','cRepEmail','cRepTel','cGarantia','cInstal','cObs','cCambioPedido','cCambioEmbarque','cServParcelasMax','cServParcelasObs'].forEach(id=>{
     const map = {cModalidade:'modalidade',cIncoterm:'incoterm',cPorto:'portoOrigem',cFab:'prazoFabricacao',cTransp:'prazoTransporte',cValid:'validade',cRepEmail:'repEmail',cRepTel:'repTelefone',cGarantia:'garantia',cInstal:'instalacao',cObs:'observacoes',cCambioPedido:'cambioPedidoPct',cCambioEmbarque:'cambioEmbarquePct',cServParcelasMax:'servicosBrasilParcelasMax',cServParcelasObs:'servicosBrasilParcelasObs'};
     const numFields = ['cCambioPedido','cCambioEmbarque','cServParcelasMax'];
     document.getElementById(id).addEventListener('input', e=> draft.condicoes[map[id]] = numFields.includes(id) ? (parseFloat(e.target.value)||0) : e.target.value);
-  });
-  document.getElementById('btnAddParcela').onclick = ()=>{ draft.pagamento.push({descricao:'', pct:0}); paintPagamentoLinhas(); };
-  document.querySelectorAll('[data-tpl]').forEach(b=> b.onclick = ()=>{
-    draft.pagamento = b.dataset.tpl==='golden'
-      ? [{descricao:'Na confirmação do pedido',pct:30},{descricao:'Após confirmação do embarque',pct:65},{descricao:'Na instalação',pct:5}]
-      : [{descricao:'Na confirmação do pedido',pct:30},{descricao:'Após confirmação do embarque',pct:70}];
-    paintPagamentoLinhas();
   });
   document.getElementById('btnStep3Back').onclick = ()=>{ draft.step=2; paintWizStep2Refresh(); };
   document.getElementById('btnStep3Next').onclick = ()=>{ draft.step=4; paintWizStep2Refresh(); };
@@ -2911,7 +2893,7 @@ function buildDocPages(){
     <p><b>PROPOSTA COMERCIAL ${esc((draft.condicoes.modalidade||'').toUpperCase())}</b></p>
     <table class="pricetable"><thead><tr><th>Equipamento</th><th>Qtd.</th><th>Preço total FOB</th></tr></thead>
     <tbody>${itensRows}</tbody>
-    <tfoot><tr><td><b>TOTAL GERAL</b></td><td><b>${String(draft.itens.reduce((s,i)=>s+i.qtd,0)).padStart(2,'0')}</b></td><td><b>${fmtUSD(t.total)}</b></td></tr></tfoot></table>
+    <tfoot><tr><td><b>TOTAL GERAL (VALOR LÍQUIDO)</b></td><td><b>${String(draft.itens.reduce((s,i)=>s+i.qtd,0)).padStart(2,'0')}</b></td><td><b>${fmtUSD(t.total)}</b></td></tr></tfoot></table>
     <p class="hint" style="margin-top:12px"><b>OBS.:</b> ${esc(OBS_FOB)}</p>
     <h3 class="dp-h">Modalidade de pagamento:</h3>
     <p><b>Fechamento de Câmbio ${esc(draft.condicoes.incoterm||'FOB')}:</b> ${fmtUSD(t.total)}<br>
